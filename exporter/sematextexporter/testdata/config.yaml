@@ -5,26 +5,14 @@ processors:
   exampleprocessor:
 
 exporters:
-  opencensus:
-  opencensus/2:
-    endpoint: "1.2.3.4:1234"
-    compression: "on"
-    num_workers: 123
-    cert_pem_file: /var/lib/mycert.pem
-    headers:
-      "can you have a . here?": "F0000000-0000-0000-0000-000000000000"
-      header1: 234
-      another: "somevalue"
-    secure: true
-    reconnection_delay: 15
-    keepalive:
-      time: 20
-      timeout: 30
-      permit_without_stream: true
+  jaeger:
+    endpoint: "some.target:55678"
+  jaeger/2:
+    endpoint: "a.new.target:1234"
 
 service:
   pipelines:
     traces:
       receivers: [examplereceiver]
       processors: [exampleprocessor]
-      exporters: [opencensus]
+      exporters: [sematext]

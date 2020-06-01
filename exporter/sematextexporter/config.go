@@ -15,11 +15,12 @@
 package sematextexporter
 
 import (
+	"go.opentelemetry.io/collector/config/configgrpc"
 	"go.opentelemetry.io/collector/config/configmodels"
 )
 
 // Config defines configuration for Jaeger gRPC exporter.
 type Config struct {
 	configmodels.ExporterSettings `mapstructure:",squash"` // squash ensures fields are correctly decoded in embedded struct.
-
+	configgrpc.GRPCSettings       `mapstructure:",squash"` // squash ensures fields are correctly decoded in embedded struct.
 }

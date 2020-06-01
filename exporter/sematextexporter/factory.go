@@ -55,10 +55,7 @@ func (f *Factory) CreateTraceExporter(
 
 	expCfg := config.(*Config)
 	if expCfg.Endpoint == "" {
-		// TODO: Improve error message, see #215
-		err := fmt.Errorf(
-			"%q config requires a non-empty \"endpoint\"",
-			expCfg.Name())
+		err := fmt.Errorf("%q config requires a non-empty \"endpoint\"", expCfg.Name())
 		return nil, err
 	}
 
