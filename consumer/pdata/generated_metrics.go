@@ -1,4 +1,4 @@
-// Copyright 2020 OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@
 package pdata
 
 import (
-	otlpmetrics "github.com/open-telemetry/opentelemetry-proto/gen/go/metrics/v1"
+	otlpmetrics "go.opentelemetry.io/collector/internal/data/opentelemetry-proto-gen/metrics/v1"
 )
 
 // ResourceMetricsSlice logically represents a slice of ResourceMetrics.
@@ -134,6 +134,14 @@ func (es ResourceMetricsSlice) Resize(newLen int) {
 		oldOrig = append(oldOrig, &extraOrigs[i])
 	}
 	(*es.orig) = oldOrig
+}
+
+// Append will increase the length of the ResourceMetricsSlice by one and set the
+// given ResourceMetrics at that new position.  The original ResourceMetrics
+// could still be referenced so do not reuse it after passing it to this
+// method.
+func (es ResourceMetricsSlice) Append(e *ResourceMetrics) {
+	(*es.orig) = append((*es.orig), *e.orig)
 }
 
 // InstrumentationLibraryMetrics is a collection of metrics from a LibraryInstrumentation.
@@ -319,6 +327,14 @@ func (es InstrumentationLibraryMetricsSlice) Resize(newLen int) {
 	(*es.orig) = oldOrig
 }
 
+// Append will increase the length of the InstrumentationLibraryMetricsSlice by one and set the
+// given InstrumentationLibraryMetrics at that new position.  The original InstrumentationLibraryMetrics
+// could still be referenced so do not reuse it after passing it to this
+// method.
+func (es InstrumentationLibraryMetricsSlice) Append(e *InstrumentationLibraryMetrics) {
+	(*es.orig) = append((*es.orig), *e.orig)
+}
+
 // InstrumentationLibraryMetrics is a collection of metrics from a LibraryInstrumentation.
 //
 // This is a reference type, if passed by value and callee modifies it the
@@ -500,6 +516,14 @@ func (es MetricSlice) Resize(newLen int) {
 		oldOrig = append(oldOrig, &extraOrigs[i])
 	}
 	(*es.orig) = oldOrig
+}
+
+// Append will increase the length of the MetricSlice by one and set the
+// given Metric at that new position.  The original Metric
+// could still be referenced so do not reuse it after passing it to this
+// method.
+func (es MetricSlice) Append(e *Metric) {
+	(*es.orig) = append((*es.orig), *e.orig)
 }
 
 // Metric represents one metric as a collection of datapoints.
@@ -689,13 +713,6 @@ func (ms MetricDescriptor) SetType(v MetricType) {
 	(*ms.orig).Type = otlpmetrics.MetricDescriptor_Type(v)
 }
 
-// LabelsMap returns the Labels associated with this MetricDescriptor.
-//
-// Important: This causes a runtime error if IsNil() returns "true".
-func (ms MetricDescriptor) LabelsMap() StringMap {
-	return newStringMap(&(*ms.orig).Labels)
-}
-
 // CopyTo copies all properties from the current struct to the dest.
 func (ms MetricDescriptor) CopyTo(dest MetricDescriptor) {
 	if ms.IsNil() {
@@ -709,7 +726,6 @@ func (ms MetricDescriptor) CopyTo(dest MetricDescriptor) {
 	dest.SetDescription(ms.Description())
 	dest.SetUnit(ms.Unit())
 	dest.SetType(ms.Type())
-	ms.LabelsMap().CopyTo(dest.LabelsMap())
 }
 
 // Int64DataPointSlice logically represents a slice of Int64DataPoint.
@@ -825,6 +841,14 @@ func (es Int64DataPointSlice) Resize(newLen int) {
 		oldOrig = append(oldOrig, &extraOrigs[i])
 	}
 	(*es.orig) = oldOrig
+}
+
+// Append will increase the length of the Int64DataPointSlice by one and set the
+// given Int64DataPoint at that new position.  The original Int64DataPoint
+// could still be referenced so do not reuse it after passing it to this
+// method.
+func (es Int64DataPointSlice) Append(e *Int64DataPoint) {
+	(*es.orig) = append((*es.orig), *e.orig)
 }
 
 // Int64DataPoint is a single data point in a timeseries that describes the time-varying values of a int64 metric.
@@ -1044,6 +1068,14 @@ func (es DoubleDataPointSlice) Resize(newLen int) {
 	(*es.orig) = oldOrig
 }
 
+// Append will increase the length of the DoubleDataPointSlice by one and set the
+// given DoubleDataPoint at that new position.  The original DoubleDataPoint
+// could still be referenced so do not reuse it after passing it to this
+// method.
+func (es DoubleDataPointSlice) Append(e *DoubleDataPoint) {
+	(*es.orig) = append((*es.orig), *e.orig)
+}
+
 // DoubleDataPoint is a single data point in a timeseries that describes the time-varying value of a double metric.
 //
 // This is a reference type, if passed by value and callee modifies it the
@@ -1259,6 +1291,14 @@ func (es HistogramDataPointSlice) Resize(newLen int) {
 		oldOrig = append(oldOrig, &extraOrigs[i])
 	}
 	(*es.orig) = oldOrig
+}
+
+// Append will increase the length of the HistogramDataPointSlice by one and set the
+// given HistogramDataPoint at that new position.  The original HistogramDataPoint
+// could still be referenced so do not reuse it after passing it to this
+// method.
+func (es HistogramDataPointSlice) Append(e *HistogramDataPoint) {
+	(*es.orig) = append((*es.orig), *e.orig)
 }
 
 // HistogramDataPoint is a single data point in a timeseries that describes the time-varying values of a Histogram.
@@ -1514,6 +1554,14 @@ func (es HistogramBucketSlice) Resize(newLen int) {
 		oldOrig = append(oldOrig, &extraOrigs[i])
 	}
 	(*es.orig) = oldOrig
+}
+
+// Append will increase the length of the HistogramBucketSlice by one and set the
+// given HistogramBucket at that new position.  The original HistogramBucket
+// could still be referenced so do not reuse it after passing it to this
+// method.
+func (es HistogramBucketSlice) Append(e *HistogramBucket) {
+	(*es.orig) = append((*es.orig), *e.orig)
 }
 
 // HistogramBucket contains values for a histogram bucket.
@@ -1794,6 +1842,14 @@ func (es SummaryDataPointSlice) Resize(newLen int) {
 	(*es.orig) = oldOrig
 }
 
+// Append will increase the length of the SummaryDataPointSlice by one and set the
+// given SummaryDataPoint at that new position.  The original SummaryDataPoint
+// could still be referenced so do not reuse it after passing it to this
+// method.
+func (es SummaryDataPointSlice) Append(e *SummaryDataPoint) {
+	(*es.orig) = append((*es.orig), *e.orig)
+}
+
 // SummaryDataPoint is a single data point in a timeseries that describes the time-varying values of a Summary metric.
 //
 // This is a reference type, if passed by value and callee modifies it the
@@ -2032,6 +2088,14 @@ func (es SummaryValueAtPercentileSlice) Resize(newLen int) {
 		oldOrig = append(oldOrig, &extraOrigs[i])
 	}
 	(*es.orig) = oldOrig
+}
+
+// Append will increase the length of the SummaryValueAtPercentileSlice by one and set the
+// given SummaryValueAtPercentile at that new position.  The original SummaryValueAtPercentile
+// could still be referenced so do not reuse it after passing it to this
+// method.
+func (es SummaryValueAtPercentileSlice) Append(e *SummaryValueAtPercentile) {
+	(*es.orig) = append((*es.orig), *e.orig)
 }
 
 // SummaryValueAtPercentile represents the value at a given percentile of a distribution.

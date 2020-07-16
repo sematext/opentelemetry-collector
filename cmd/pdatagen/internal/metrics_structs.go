@@ -1,4 +1,4 @@
-// Copyright 2020 OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,13 +17,14 @@ package internal
 var metricsFile = &File{
 	Name: "metrics",
 	imports: []string{
-		`otlpmetrics "github.com/open-telemetry/opentelemetry-proto/gen/go/metrics/v1"`,
+		`otlpmetrics "go.opentelemetry.io/collector/internal/data/opentelemetry-proto-gen/metrics/v1"`,
 	},
 	testImports: []string{
 		`"testing"`,
 		``,
-		`otlpmetrics "github.com/open-telemetry/opentelemetry-proto/gen/go/metrics/v1"`,
 		`"github.com/stretchr/testify/assert"`,
+		``,
+		`otlpmetrics "go.opentelemetry.io/collector/internal/data/opentelemetry-proto-gen/metrics/v1"`,
 	},
 	structs: []baseStruct{
 		resourceMetricsSlice,
@@ -99,7 +100,7 @@ var metric = &messageStruct{
 	originFullName: "otlpmetrics.Metric",
 	fields: []baseField{
 		&messageField{
-			fieldMame:       "MetricDescriptor",
+			fieldName:       "MetricDescriptor",
 			originFieldName: "MetricDescriptor",
 			returnMessage:   metricDescriptor,
 		},
@@ -151,10 +152,9 @@ var metricDescriptor = &messageStruct{
 			originFieldName: "Type",
 			returnType:      "MetricType",
 			rawType:         "otlpmetrics.MetricDescriptor_Type",
-			defaultVal:      "MetricTypeUnspecified",
-			testVal:         "MetricTypeGaugeInt64",
+			defaultVal:      "MetricTypeInvalid",
+			testVal:         "MetricTypeInt64",
 		},
-		labelsField,
 	},
 }
 
@@ -228,7 +228,7 @@ var histogramBucket = &messageStruct{
 	fields: []baseField{
 		countField,
 		&messageField{
-			fieldMame:       "Exemplar",
+			fieldName:       "Exemplar",
 			originFieldName: "Exemplar",
 			returnMessage:   histogramBucketExemplar,
 		},

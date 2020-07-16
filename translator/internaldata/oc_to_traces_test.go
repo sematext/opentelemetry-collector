@@ -1,4 +1,4 @@
-// Copyright 2020 OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -23,12 +23,12 @@ import (
 	octrace "github.com/census-instrumentation/opencensus-proto/gen-go/trace/v1"
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
-	otlptrace "github.com/open-telemetry/opentelemetry-proto/gen/go/trace/v1"
 	"github.com/stretchr/testify/assert"
 
 	"go.opentelemetry.io/collector/consumer/consumerdata"
 	"go.opentelemetry.io/collector/consumer/pdata"
 	"go.opentelemetry.io/collector/internal"
+	otlptrace "go.opentelemetry.io/collector/internal/data/opentelemetry-proto-gen/trace/v1"
 	"go.opentelemetry.io/collector/internal/data/testdata"
 )
 
@@ -180,6 +180,16 @@ func TestOcSpanKindToInternal(t *testing.T) {
 			},
 			otlpKind: otlptrace.Span_CLIENT,
 		},
+		{
+			ocKind: octrace.Span_SPAN_KIND_UNSPECIFIED,
+			ocAttrs: &octrace.Span_Attributes{
+				AttributeMap: map[string]*octrace.AttributeValue{
+					"span.kind": {Value: &octrace.AttributeValue_StringValue{
+						StringValue: &octrace.TruncatableString{Value: "internal"}}},
+				},
+			},
+			otlpKind: otlptrace.Span_INTERNAL,
+		},
 	}
 
 	for _, test := range tests {
@@ -245,6 +255,10 @@ func TestOcToInternal(t *testing.T) {
 		},
 		Status: &octrace.Status{Message: "status-cancelled", Code: 1},
 	}
+
+	// TODO: Create another unit test fully covering ocSpanToInternal
+	ocSpanZeroedParentID := proto.Clone(ocSpan1).(*octrace.Span)
+	ocSpanZeroedParentID.ParentSpanId = []byte{0, 0, 0, 0, 0, 0, 0, 0}
 
 	ocSpan2 := &octrace.Span{
 		Name:      &octrace.TruncatableString{Value: "operationB"},
@@ -335,6 +349,16 @@ func TestOcToInternal(t *testing.T) {
 		},
 
 		{
+			name: "one-span-zeroed-parent-id",
+			td:   testdata.GenerateTraceDataOneSpan(),
+			oc: consumerdata.TraceData{
+				Node:     ocNode,
+				Resource: ocResource1,
+				Spans:    []*octrace.Span{ocSpanZeroedParentID},
+			},
+		},
+
+		{
 			name: "one-span-one-nil",
 			td:   testdata.GenerateTraceDataOneSpan(),
 			oc: consumerdata.TraceData{
@@ -375,13 +399,14 @@ func TestOcToInternal(t *testing.T) {
 		},
 	}
 
-	// Extra test:
+	// Extra tests:
 	//	* "two-spans-and-separate-in-the-middle"
+	//	* "one-span-zeroed-parent-id"
 	// Missing tests (impossible to generate):
 	//  * GenerateTraceDataOneEmptyOneNilResourceSpans
 	//	* GenerateTraceDataOneEmptyInstrumentationLibrary
 	//	* GenerateTraceDataOneEmptyOneNilInstrumentationLibrary
-	assert.EqualValues(t, testdata.NumTraceTests-2, len(tests))
+	assert.EqualValues(t, testdata.NumTraceTests-1, len(tests))
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

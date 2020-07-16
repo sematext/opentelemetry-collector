@@ -1,4 +1,4 @@
-// Copyright 2019, OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@ import (
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/config/configerror"
 	"go.opentelemetry.io/collector/config/configmodels"
+	"go.opentelemetry.io/collector/config/configprotocol"
 	"go.opentelemetry.io/collector/consumer"
 	"go.opentelemetry.io/collector/consumer/consumerdata"
 	"go.opentelemetry.io/collector/internal/data"
@@ -32,9 +33,12 @@ import (
 // for "examplereceiver" receiver type.
 type ExampleReceiver struct {
 	configmodels.ReceiverSettings `mapstructure:",squash"` // squash ensures fields are correctly decoded in embedded struct
-	ExtraSetting                  string                   `mapstructure:"extra"`
-	ExtraMapSetting               map[string]string        `mapstructure:"extra_map"`
-	ExtraListSetting              []string                 `mapstructure:"extra_list"`
+	// Configures the receiver server protocol.
+	configprotocol.ProtocolServerSettings `mapstructure:",squash"` // squash ensures fields are correctly decoded in embedded struct
+
+	ExtraSetting     string            `mapstructure:"extra"`
+	ExtraMapSetting  map[string]string `mapstructure:"extra_map"`
+	ExtraListSetting []string          `mapstructure:"extra_list"`
 
 	// FailTraceCreation causes CreateTraceReceiver to fail. Useful for testing.
 	FailTraceCreation bool `mapstructure:"-"`
@@ -61,8 +65,10 @@ func (f *ExampleReceiverFactory) CustomUnmarshaler() component.CustomUnmarshaler
 func (f *ExampleReceiverFactory) CreateDefaultConfig() configmodels.Receiver {
 	return &ExampleReceiver{
 		ReceiverSettings: configmodels.ReceiverSettings{
-			TypeVal:  f.Type(),
-			NameVal:  string(f.Type()),
+			TypeVal: f.Type(),
+			NameVal: string(f.Type()),
+		},
+		ProtocolServerSettings: configprotocol.ProtocolServerSettings{
 			Endpoint: "localhost:1000",
 		},
 		ExtraSetting:     "some string",
@@ -104,11 +110,7 @@ func (f *ExampleReceiverFactory) createReceiver(cfg configmodels.Receiver) *Exam
 }
 
 // CreateMetricsReceiver creates a metrics receiver based on this config.
-func (f *ExampleReceiverFactory) CreateMetricsReceiver(
-	logger *zap.Logger,
-	cfg configmodels.Receiver,
-	nextConsumer consumer.MetricsConsumerOld,
-) (component.MetricsReceiver, error) {
+func (f *ExampleReceiverFactory) CreateMetricsReceiver(ctx context.Context, logger *zap.Logger, cfg configmodels.Receiver, nextConsumer consumer.MetricsConsumerOld) (component.MetricsReceiver, error) {
 	if cfg.(*ExampleReceiver).FailMetricsCreation {
 		return nil, configerror.ErrDataTypeIsNotSupported
 	}
@@ -238,11 +240,7 @@ func (f *MultiProtoReceiverFactory) CreateTraceReceiver(
 }
 
 // CreateMetricsReceiver creates a metrics receiver based on this config.
-func (f *MultiProtoReceiverFactory) CreateMetricsReceiver(
-	logger *zap.Logger,
-	cfg configmodels.Receiver,
-	consumer consumer.MetricsConsumerOld,
-) (component.MetricsReceiver, error) {
+func (f *MultiProtoReceiverFactory) CreateMetricsReceiver(ctx context.Context, logger *zap.Logger, cfg configmodels.Receiver, nextConsumer consumer.MetricsConsumerOld) (component.MetricsReceiver, error) {
 	// Not used for this test, just return nil
 	return nil, nil
 }

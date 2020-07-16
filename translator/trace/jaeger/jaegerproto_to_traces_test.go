@@ -1,4 +1,4 @@
-// Copyright 2020, OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -22,11 +22,11 @@ import (
 	"time"
 
 	"github.com/jaegertracing/jaeger/model"
-	otlptrace "github.com/open-telemetry/opentelemetry-proto/gen/go/trace/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"go.opentelemetry.io/collector/consumer/pdata"
+	otlptrace "go.opentelemetry.io/collector/internal/data/opentelemetry-proto-gen/trace/v1"
 	"go.opentelemetry.io/collector/internal/data/testdata"
 	"go.opentelemetry.io/collector/translator/conventions"
 	tracetranslator "go.opentelemetry.io/collector/translator/trace"
@@ -205,17 +205,33 @@ func TestProtoBatchToInternalTraces(t *testing.T) {
 		},
 
 		{
-			name: "one-span-no-resources",
+			name: "no-resource-attrs",
 			jb: model.Batch{
-				Spans: []*model.Span{
-					generateProtoSpan(),
+				Process: &model.Process{
+					ServiceName: tracetranslator.ResourceNoAttrs,
 				},
 			},
-			td: generateTraceDataOneSpanNoResource(),
+			td: generateTraceDataResourceOnlyWithNoAttrs(),
+		},
+
+		{
+			name: "one-span-no-resources",
+			jb: model.Batch{
+				Process: &model.Process{
+					ServiceName: tracetranslator.ResourceNotSet,
+				},
+				Spans: []*model.Span{
+					generateProtoSpanWithTraceState(),
+				},
+			},
+			td: generateTraceDataOneSpanNoResourceWithTraceState(),
 		},
 		{
 			name: "two-spans-child-parent",
 			jb: model.Batch{
+				Process: &model.Process{
+					ServiceName: tracetranslator.ResourceNotSet,
+				},
 				Spans: []*model.Span{
 					generateProtoSpan(),
 					generateProtoChildSpan(),
@@ -227,6 +243,9 @@ func TestProtoBatchToInternalTraces(t *testing.T) {
 		{
 			name: "two-spans-with-follower",
 			jb: model.Batch{
+				Process: &model.Process{
+					ServiceName: tracetranslator.ResourceNotSet,
+				},
 				Spans: []*model.Span{
 					generateProtoSpan(),
 					generateProtoFollowerSpan(),
@@ -240,6 +259,123 @@ func TestProtoBatchToInternalTraces(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			td := ProtoBatchToInternalTraces(test.jb)
 			assert.EqualValues(t, test.td, td)
+		})
+	}
+}
+
+func TestSetInternalSpanStatus(t *testing.T) {
+
+	nilStatus := pdata.NewSpanStatus()
+
+	okStatus := pdata.NewSpanStatus()
+	okStatus.InitEmpty()
+	okStatus.SetCode(pdata.StatusCode(otlptrace.Status_Ok))
+
+	unknownStatus := pdata.NewSpanStatus()
+	unknownStatus.InitEmpty()
+	unknownStatus.SetCode(pdata.StatusCode(otlptrace.Status_UnknownError))
+
+	canceledStatus := pdata.NewSpanStatus()
+	canceledStatus.InitEmpty()
+	canceledStatus.SetCode(pdata.StatusCode(otlptrace.Status_Cancelled))
+
+	invalidStatusWithMessage := pdata.NewSpanStatus()
+	invalidStatusWithMessage.InitEmpty()
+	invalidStatusWithMessage.SetCode(pdata.StatusCode(otlptrace.Status_InvalidArgument))
+	invalidStatusWithMessage.SetMessage("Error: Invalid argument")
+
+	notFoundStatus := pdata.NewSpanStatus()
+	notFoundStatus.InitEmpty()
+	notFoundStatus.SetCode(pdata.StatusCode(otlptrace.Status_NotFound))
+
+	notFoundStatusWithMessage := pdata.NewSpanStatus()
+	notFoundStatusWithMessage.InitEmpty()
+	notFoundStatusWithMessage.SetCode(pdata.StatusCode(otlptrace.Status_NotFound))
+	notFoundStatusWithMessage.SetMessage("HTTP 404: Not Found")
+
+	tests := []struct {
+		name             string
+		attrs            pdata.AttributeMap
+		status           pdata.SpanStatus
+		attrsModifiedLen int // Length of attributes map after dropping converted fields
+	}{
+		{
+			name:             "No tags set -> OK status",
+			attrs:            pdata.NewAttributeMap().InitFromMap(map[string]pdata.AttributeValue{}),
+			status:           nilStatus,
+			attrsModifiedLen: 0,
+		},
+		{
+			name: "error tag set -> Unknown status",
+			attrs: pdata.NewAttributeMap().InitFromMap(map[string]pdata.AttributeValue{
+				tracetranslator.TagError: pdata.NewAttributeValueBool(true),
+			}),
+			status:           unknownStatus,
+			attrsModifiedLen: 0,
+		},
+		{
+			name: "status.code is set as int",
+			attrs: pdata.NewAttributeMap().InitFromMap(map[string]pdata.AttributeValue{
+				tracetranslator.TagStatusCode: pdata.NewAttributeValueInt(1),
+			}),
+			status:           canceledStatus,
+			attrsModifiedLen: 0,
+		},
+		{
+			name: "status.code, status.message and error tags are set",
+			attrs: pdata.NewAttributeMap().InitFromMap(map[string]pdata.AttributeValue{
+				tracetranslator.TagError:      pdata.NewAttributeValueBool(true),
+				tracetranslator.TagStatusCode: pdata.NewAttributeValueInt(3),
+				tracetranslator.TagStatusMsg:  pdata.NewAttributeValueString("Error: Invalid argument"),
+			}),
+			status:           invalidStatusWithMessage,
+			attrsModifiedLen: 0,
+		},
+		{
+			name: "http.status_code tag is set as string",
+			attrs: pdata.NewAttributeMap().InitFromMap(map[string]pdata.AttributeValue{
+				tracetranslator.TagHTTPStatusCode: pdata.NewAttributeValueString("404"),
+			}),
+			status:           notFoundStatus,
+			attrsModifiedLen: 1,
+		},
+		{
+			name: "http.status_code, http.status_message and error tags are set",
+			attrs: pdata.NewAttributeMap().InitFromMap(map[string]pdata.AttributeValue{
+				tracetranslator.TagError:          pdata.NewAttributeValueBool(true),
+				tracetranslator.TagHTTPStatusCode: pdata.NewAttributeValueInt(404),
+				tracetranslator.TagHTTPStatusMsg:  pdata.NewAttributeValueString("HTTP 404: Not Found"),
+			}),
+			status:           notFoundStatusWithMessage,
+			attrsModifiedLen: 2,
+		},
+		{
+			name: "status.code has precedence over http.status_code.",
+			attrs: pdata.NewAttributeMap().InitFromMap(map[string]pdata.AttributeValue{
+				tracetranslator.TagStatusCode:     pdata.NewAttributeValueInt(1),
+				tracetranslator.TagHTTPStatusCode: pdata.NewAttributeValueInt(500),
+				tracetranslator.TagHTTPStatusMsg:  pdata.NewAttributeValueString("Server Error"),
+			}),
+			status:           canceledStatus,
+			attrsModifiedLen: 2,
+		},
+		{
+			name: "Ignore http.status_code == 200 if error set to true.",
+			attrs: pdata.NewAttributeMap().InitFromMap(map[string]pdata.AttributeValue{
+				tracetranslator.TagError:          pdata.NewAttributeValueBool(true),
+				tracetranslator.TagHTTPStatusCode: pdata.NewAttributeValueInt(200),
+			}),
+			status:           unknownStatus,
+			attrsModifiedLen: 1,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			status := pdata.NewSpanStatus()
+			setInternalSpanStatus(test.attrs, status)
+			assert.EqualValues(t, test.status, status)
+			assert.Equal(t, test.attrsModifiedLen, test.attrs.Len())
 		})
 	}
 }
@@ -275,12 +411,57 @@ func TestProtoBatchesToInternalTraces(t *testing.T) {
 	assert.EqualValues(t, expected, got)
 }
 
+func TestJSpanKindToInternal(t *testing.T) {
+	tests := []struct {
+		jSpanKind    string
+		otlpSpanKind pdata.SpanKind
+	}{
+		{
+			jSpanKind:    "client",
+			otlpSpanKind: pdata.SpanKindCLIENT,
+		},
+		{
+			jSpanKind:    "server",
+			otlpSpanKind: pdata.SpanKindSERVER,
+		},
+		{
+			jSpanKind:    "producer",
+			otlpSpanKind: pdata.SpanKindPRODUCER,
+		},
+		{
+			jSpanKind:    "consumer",
+			otlpSpanKind: pdata.SpanKindCONSUMER,
+		},
+		{
+			jSpanKind:    "internal",
+			otlpSpanKind: pdata.SpanKindINTERNAL,
+		},
+		{
+			jSpanKind:    "all-others",
+			otlpSpanKind: pdata.SpanKindUNSPECIFIED,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.jSpanKind, func(t *testing.T) {
+			assert.Equal(t, test.otlpSpanKind, jSpanKindToInternal(test.jSpanKind))
+		})
+	}
+}
+
 func generateTraceDataResourceOnly() pdata.Traces {
 	td := testdata.GenerateTraceDataOneEmptyResourceSpans()
 	rs := td.ResourceSpans().At(0).Resource()
 	rs.InitEmpty()
 	rs.Attributes().InsertString(conventions.AttributeServiceName, "service-1")
 	rs.Attributes().InsertInt("int-attr-1", 123)
+	return td
+}
+
+func generateTraceDataResourceOnlyWithNoAttrs() pdata.Traces {
+	td := testdata.GenerateTraceDataOneEmptyResourceSpans()
+	rs := td.ResourceSpans().At(0).Resource()
+	rs.InitEmpty()
 	return td
 }
 
@@ -307,15 +488,21 @@ func generateTraceDataOneSpanNoResource() pdata.Traces {
 	span.SetDroppedEventsCount(0)
 	span.SetStartTime(testSpanStartTimestamp)
 	span.SetEndTime(testSpanEndTimestamp)
+	span.SetKind(pdata.SpanKindCLIENT)
 	span.Events().At(0).SetTimestamp(testSpanEventTimestamp)
 	span.Events().At(0).SetDroppedAttributesCount(0)
-	span.Events().At(0).Attributes().InitFromMap(map[string]pdata.AttributeValue{
-		"message": pdata.NewAttributeValueString("event-with-attr"),
-	})
+	span.Events().At(0).SetName("event-with-attr")
 	span.Events().At(1).SetTimestamp(testSpanEventTimestamp)
 	span.Events().At(1).SetDroppedAttributesCount(0)
 	span.Events().At(1).SetName("")
 	span.Events().At(1).Attributes().InsertInt("attr-int", 123)
+	return td
+}
+
+func generateTraceDataOneSpanNoResourceWithTraceState() pdata.Traces {
+	td := generateTraceDataOneSpanNoResource()
+	span := td.ResourceSpans().At(0).InstrumentationLibrarySpans().At(0).Spans().At(0)
+	span.SetTraceState("lasterror=f39cd56cc44274fd5abd07ef1164246d10ce2955")
 	return td
 }
 
@@ -334,9 +521,14 @@ func generateProtoSpan() *model.Span {
 				Timestamp: testSpanEventTime,
 				Fields: []model.KeyValue{
 					{
-						Key:   "message",
+						Key:   tracetranslator.TagMessage,
 						VType: model.ValueType_STRING,
 						VStr:  "event-with-attr",
+					},
+					{
+						Key:   "span-event-attr",
+						VType: model.ValueType_STRING,
+						VStr:  "span-event-attr-val",
 					},
 				},
 			},
@@ -352,6 +544,11 @@ func generateProtoSpan() *model.Span {
 			},
 		},
 		Tags: []model.KeyValue{
+			{
+				Key:   tracetranslator.TagSpanKind,
+				VType: model.ValueType_STRING,
+				VStr:  string(tracetranslator.OpenTracingSpanKindClient),
+			},
 			{
 				Key:    tracetranslator.TagStatusCode,
 				VType:  model.ValueType_INT64,
@@ -371,6 +568,73 @@ func generateProtoSpan() *model.Span {
 	}
 }
 
+func generateProtoSpanWithTraceState() *model.Span {
+	return &model.Span{
+		TraceID: model.NewTraceID(
+			binary.BigEndian.Uint64([]byte{0xF1, 0xF2, 0xF3, 0xF4, 0xF5, 0xF6, 0xF7, 0xF8}),
+			binary.BigEndian.Uint64([]byte{0xF9, 0xFA, 0xFB, 0xFC, 0xFD, 0xFE, 0xFF, 0x80}),
+		),
+		SpanID:        model.NewSpanID(binary.BigEndian.Uint64([]byte{0xAF, 0xAE, 0xAD, 0xAC, 0xAB, 0xAA, 0xA9, 0xA8})),
+		OperationName: "operationA",
+		StartTime:     testSpanStartTime,
+		Duration:      testSpanEndTime.Sub(testSpanStartTime),
+		Logs: []model.Log{
+			{
+				Timestamp: testSpanEventTime,
+				Fields: []model.KeyValue{
+					{
+						Key:   tracetranslator.TagMessage,
+						VType: model.ValueType_STRING,
+						VStr:  "event-with-attr",
+					},
+					{
+						Key:   "span-event-attr",
+						VType: model.ValueType_STRING,
+						VStr:  "span-event-attr-val",
+					},
+				},
+			},
+			{
+				Timestamp: testSpanEventTime,
+				Fields: []model.KeyValue{
+					{
+						Key:    "attr-int",
+						VType:  model.ValueType_INT64,
+						VInt64: 123,
+					},
+				},
+			},
+		},
+		Tags: []model.KeyValue{
+			{
+				Key:   tracetranslator.TagSpanKind,
+				VType: model.ValueType_STRING,
+				VStr:  string(tracetranslator.OpenTracingSpanKindClient),
+			},
+			{
+				Key:    tracetranslator.TagStatusCode,
+				VType:  model.ValueType_INT64,
+				VInt64: tracetranslator.OCCancelled,
+			},
+			{
+				Key:   tracetranslator.TagError,
+				VBool: true,
+				VType: model.ValueType_BOOL,
+			},
+			{
+				Key:   tracetranslator.TagStatusMsg,
+				VType: model.ValueType_STRING,
+				VStr:  "status-cancelled",
+			},
+			{
+				Key:   tracetranslator.TagW3CTraceState,
+				VType: model.ValueType_STRING,
+				VStr:  "lasterror=f39cd56cc44274fd5abd07ef1164246d10ce2955",
+			},
+		},
+	}
+}
+
 func generateTraceDataTwoSpansChildParent() pdata.Traces {
 	td := generateTraceDataOneSpanNoResource()
 	spans := td.ResourceSpans().At(0).InstrumentationLibrarySpans().At(0).Spans()
@@ -380,6 +644,7 @@ func generateTraceDataTwoSpansChildParent() pdata.Traces {
 	span.SetName("operationB")
 	span.SetSpanID([]byte{0x1F, 0x1E, 0x1D, 0x1C, 0x1B, 0x1A, 0x19, 0x18})
 	span.SetParentSpanID(spans.At(0).SpanID())
+	span.SetKind(pdata.SpanKindSERVER)
 	span.SetTraceID(spans.At(0).TraceID())
 	span.SetStartTime(spans.At(0).StartTime())
 	span.SetEndTime(spans.At(0).EndTime())
@@ -409,6 +674,11 @@ func generateProtoChildSpan() *model.Span {
 				VType:  model.ValueType_INT64,
 				VInt64: 404,
 			},
+			{
+				Key:   tracetranslator.TagSpanKind,
+				VType: model.ValueType_STRING,
+				VStr:  string(tracetranslator.OpenTracingSpanKindServer),
+			},
 		},
 		References: []model.SpanRef{
 			{
@@ -431,6 +701,7 @@ func generateTraceDataTwoSpansWithFollower() pdata.Traces {
 	span.SetTraceID(spans.At(0).TraceID())
 	span.SetStartTime(spans.At(0).EndTime())
 	span.SetEndTime(spans.At(0).EndTime() + 1000000)
+	span.SetKind(pdata.SpanKindCONSUMER)
 	span.Status().InitEmpty()
 	span.Status().SetCode(pdata.StatusCode(otlptrace.Status_Ok))
 	span.Status().SetMessage("status-ok")
@@ -452,6 +723,11 @@ func generateProtoFollowerSpan() *model.Span {
 		StartTime:     testSpanEndTime,
 		Duration:      time.Duration(time.Millisecond),
 		Tags: []model.KeyValue{
+			{
+				Key:   tracetranslator.TagSpanKind,
+				VType: model.ValueType_STRING,
+				VStr:  string(tracetranslator.OpenTracingSpanKindConsumer),
+			},
 			{
 				Key:    tracetranslator.TagStatusCode,
 				VType:  model.ValueType_INT64,

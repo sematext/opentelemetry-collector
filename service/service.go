@@ -1,4 +1,4 @@
-// Copyright 2019, OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -32,6 +32,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/component/componenterror"
@@ -50,6 +51,21 @@ const (
 	extensionzPath = "extensionz"
 )
 
+// State defines Application's state.
+type State int
+
+const (
+	Starting State = iota
+	Running
+	Closing
+	Closed
+)
+
+// GetStateChannel returns state channel of the application.
+func (app *Application) GetStateChannel() chan State {
+	return app.stateChannel
+}
+
 // Application represents a collector application
 type Application struct {
 	info            ApplicationStartInfo
@@ -60,14 +76,16 @@ type Application struct {
 	builtReceivers  builder.Receivers
 	builtPipelines  builder.BuiltPipelines
 	builtExtensions builder.Extensions
+	stateChannel    chan State
 
 	factories config.Factories
 	config    *configmodels.Config
 
 	// stopTestChan is used to terminate the application in end to end tests.
 	stopTestChan chan struct{}
-	// readyChan is used in tests to indicate that the application is ready.
-	readyChan chan struct{}
+
+	// signalsChannel is used to receive termination signals from the OS.
+	signalsChannel chan os.Signal
 
 	// asyncErrorChannel is used to signal a fatal error from any component.
 	asyncErrorChannel chan error
@@ -104,6 +122,8 @@ type Parameters struct {
 	// If it is not provided the default factory (FileLoaderConfigFactory) is used.
 	// The default factory loads the configuration specified as a command line flag.
 	ConfigFactory ConfigFactory
+	// LoggingHooks provides a way to supply a hook into logging events
+	LoggingHooks []func(zapcore.Entry) error
 }
 
 // ConfigFactory creates config.
@@ -126,10 +146,10 @@ func FileLoaderConfigFactory(v *viper.Viper, factories config.Factories) (*confi
 // New creates and returns a new instance of Application.
 func New(params Parameters) (*Application, error) {
 	app := &Application{
-		info:      params.ApplicationStartInfo,
-		v:         config.NewViper(),
-		readyChan: make(chan struct{}),
-		factories: params.Factories,
+		info:         params.ApplicationStartInfo,
+		v:            config.NewViper(),
+		factories:    params.Factories,
+		stateChannel: make(chan State, Closed+1),
 	}
 
 	factory := params.ConfigFactory
@@ -142,7 +162,7 @@ func New(params Parameters) (*Application, error) {
 		Use:  params.ApplicationStartInfo.ExeName,
 		Long: params.ApplicationStartInfo.LongName,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			err := app.init()
+			err := app.init(params.LoggingHooks...)
 			if err != nil {
 				return err
 			}
@@ -180,6 +200,12 @@ func (app *Application) ReportFatalError(err error) {
 	app.asyncErrorChannel <- err
 }
 
+// GetLogger returns logger used by the Application.
+// The logger is initialized after application start.
+func (app *Application) GetLogger() *zap.Logger {
+	return app.logger
+}
+
 func (app *Application) GetFactory(kind component.Kind, componentType configmodels.Type) component.Factory {
 	switch kind {
 	case component.KindReceiver:
@@ -208,8 +234,17 @@ func (app *Application) RegisterZPages(mux *http.ServeMux, pathPrefix string) {
 	mux.HandleFunc(path.Join(pathPrefix, extensionzPath), app.handleExtensionzRequest)
 }
 
-func (app *Application) init() error {
-	l, err := newLogger()
+func (app *Application) SignalTestComplete() {
+	defer func() {
+		if r := recover(); r != nil {
+			app.logger.Info("stopTestChan already closed")
+		}
+	}()
+	close(app.stopTestChan)
+}
+
+func (app *Application) init(hooks ...func(zapcore.Entry) error) error {
+	l, err := newLogger(hooks...)
 	if err != nil {
 		return errors.Wrap(err, "failed to get logger")
 	}
@@ -220,7 +255,7 @@ func (app *Application) init() error {
 func (app *Application) setupTelemetry(ballastSizeBytes uint64) error {
 	app.logger.Info("Setting up own telemetry...")
 
-	err := AppTelemetry.init(app.asyncErrorChannel, ballastSizeBytes, app.logger)
+	err := applicationTelemetry.init(app.asyncErrorChannel, ballastSizeBytes, app.logger)
 	if err != nil {
 		return errors.Wrap(err, "failed to initialize telemetry")
 	}
@@ -232,23 +267,22 @@ func (app *Application) setupTelemetry(ballastSizeBytes uint64) error {
 func (app *Application) runAndWaitForShutdownEvent() {
 	app.logger.Info("Everything is ready. Begin running and processing data.")
 
-	// Plug SIGTERM signal into a channel.
-	signalsChannel := make(chan os.Signal, 1)
-	signal.Notify(signalsChannel, os.Interrupt, syscall.SIGTERM)
+	// plug SIGTERM signal into a channel.
+	app.signalsChannel = make(chan os.Signal, 1)
+	signal.Notify(app.signalsChannel, os.Interrupt, syscall.SIGTERM)
 
 	// set the channel to stop testing.
 	app.stopTestChan = make(chan struct{})
-	// notify tests that it is ready.
-	close(app.readyChan)
-
+	app.stateChannel <- Running
 	select {
 	case err := <-app.asyncErrorChannel:
 		app.logger.Error("Asynchronous error received, terminating process", zap.Error(err))
-	case s := <-signalsChannel:
+	case s := <-app.signalsChannel:
 		app.logger.Info("Received signal from OS", zap.String("signal", s.String()))
 	case <-app.stopTestChan:
 		app.logger.Info("Received stop test request")
 	}
+	app.stateChannel <- Closing
 }
 
 func (app *Application) setupConfigurationComponents(ctx context.Context, factory ConfigFactory) error {
@@ -384,6 +418,7 @@ func (app *Application) execute(ctx context.Context, factory ConfigFactory) erro
 		zap.String("GitHash", app.info.GitHash),
 		zap.Int("NumCPU", runtime.NumCPU()),
 	)
+	app.stateChannel <- Starting
 
 	// Set memory ballast
 	ballast, ballastSizeBytes := app.createMemoryBallast()
@@ -431,9 +466,14 @@ func (app *Application) execute(ctx context.Context, factory ConfigFactory) erro
 		errs = append(errs, errors.Wrap(err, "failed to shutdown extensions"))
 	}
 
-	AppTelemetry.shutdown()
+	err = applicationTelemetry.shutdown()
+	if err != nil {
+		errs = append(errs, errors.Wrap(err, "failed to shutdown extensions"))
+	}
 
 	app.logger.Info("Shutdown complete.")
+	app.stateChannel <- Closed
+	close(app.stateChannel)
 
 	if len(errs) != 0 {
 		return componenterror.CombineErrors(errs)

@@ -1,4 +1,4 @@
-// Copyright 2019, OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -23,7 +23,6 @@ import (
 
 	"github.com/jaegertracing/jaeger/model"
 	"github.com/jaegertracing/jaeger/proto-gen/api_v2"
-	tracev1 "github.com/open-telemetry/opentelemetry-proto/gen/go/trace/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -31,7 +30,9 @@ import (
 
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/config/configgrpc"
+	"go.opentelemetry.io/collector/config/configtls"
 	"go.opentelemetry.io/collector/consumer/pdata"
+	tracev1 "go.opentelemetry.io/collector/internal/data/opentelemetry-proto-gen/trace/v1"
 	"go.opentelemetry.io/collector/internal/data/testdata"
 )
 
@@ -48,16 +49,14 @@ func TestNew(t *testing.T) {
 			name: "createExporter",
 			args: args{
 				config: Config{
-					GRPCSettings: configgrpc.GRPCSettings{
+					GRPCClientSettings: configgrpc.GRPCClientSettings{
 						Headers:     nil,
 						Endpoint:    "foo.bar",
 						Compression: "",
-						TLSConfig: configgrpc.TLSConfig{
-							CaCert:             "",
-							UseSecure:          false,
-							ServerNameOverride: "",
+						TLSSetting: configtls.TLSClientSetting{
+							Insecure: true,
 						},
-						KeepaliveParameters: nil,
+						Keepalive: nil,
 					},
 				},
 			},
@@ -66,16 +65,11 @@ func TestNew(t *testing.T) {
 			name: "createExporterWithHeaders",
 			args: args{
 				config: Config{
-					GRPCSettings: configgrpc.GRPCSettings{
+					GRPCClientSettings: configgrpc.GRPCClientSettings{
 						Headers:     map[string]string{"extra-header": "header-value"},
 						Endpoint:    "foo.bar",
 						Compression: "",
-						TLSConfig: configgrpc.TLSConfig{
-							CaCert:             "",
-							UseSecure:          true,
-							ServerNameOverride: "",
-						},
-						KeepaliveParameters: nil,
+						Keepalive:   nil,
 					},
 				},
 			},
@@ -84,16 +78,11 @@ func TestNew(t *testing.T) {
 			name: "createBasicSecureExporter",
 			args: args{
 				config: Config{
-					GRPCSettings: configgrpc.GRPCSettings{
+					GRPCClientSettings: configgrpc.GRPCClientSettings{
 						Headers:     nil,
 						Endpoint:    "foo.bar",
 						Compression: "",
-						TLSConfig: configgrpc.TLSConfig{
-							CaCert:             "",
-							UseSecure:          true,
-							ServerNameOverride: "",
-						},
-						KeepaliveParameters: nil,
+						Keepalive:   nil,
 					},
 				},
 			},
@@ -102,16 +91,17 @@ func TestNew(t *testing.T) {
 			name: "createSecureExporterWithClientTLS",
 			args: args{
 				config: Config{
-					GRPCSettings: configgrpc.GRPCSettings{
+					GRPCClientSettings: configgrpc.GRPCClientSettings{
 						Headers:     nil,
 						Endpoint:    "foo.bar",
 						Compression: "",
-						TLSConfig: configgrpc.TLSConfig{
-							CaCert:             "testdata/test_cert.pem",
-							UseSecure:          true,
-							ServerNameOverride: "",
+						TLSSetting: configtls.TLSClientSetting{
+							TLSSetting: configtls.TLSSetting{
+								CAFile: "testdata/test_cert.pem",
+							},
+							Insecure: false,
 						},
-						KeepaliveParameters: nil,
+						Keepalive: nil,
 					},
 				},
 			},
@@ -120,16 +110,18 @@ func TestNew(t *testing.T) {
 			name: "createSecureExporterWithKeepAlive",
 			args: args{
 				config: Config{
-					GRPCSettings: configgrpc.GRPCSettings{
+					GRPCClientSettings: configgrpc.GRPCClientSettings{
 						Headers:     nil,
 						Endpoint:    "foo.bar",
 						Compression: "",
-						TLSConfig: configgrpc.TLSConfig{
-							CaCert:             "testdata/test_cert.pem",
-							UseSecure:          true,
-							ServerNameOverride: "",
+						TLSSetting: configtls.TLSClientSetting{
+							TLSSetting: configtls.TLSSetting{
+								CAFile: "testdata/test_cert.pem",
+							},
+							Insecure:   false,
+							ServerName: "",
 						},
-						KeepaliveParameters: &configgrpc.KeepaliveConfig{
+						Keepalive: &configgrpc.KeepaliveClientConfig{
 							Time:                0,
 							Timeout:             0,
 							PermitWithoutStream: false,
@@ -142,16 +134,17 @@ func TestNew(t *testing.T) {
 			name: "createSecureExporterWithMissingFile",
 			args: args{
 				config: Config{
-					GRPCSettings: configgrpc.GRPCSettings{
+					GRPCClientSettings: configgrpc.GRPCClientSettings{
 						Headers:     nil,
 						Endpoint:    "foo.bar",
 						Compression: "",
-						TLSConfig: configgrpc.TLSConfig{
-							CaCert:             "testdata/test_cert_missing.pem",
-							UseSecure:          true,
-							ServerNameOverride: "",
+						TLSSetting: configtls.TLSClientSetting{
+							TLSSetting: configtls.TLSSetting{
+								CAFile: "testdata/test_cert_missing.pem",
+							},
+							Insecure: false,
 						},
-						KeepaliveParameters: nil,
+						Keepalive: nil,
 					},
 				},
 			},
@@ -197,10 +190,12 @@ func TestMutualTLS(t *testing.T) {
 	clientKeyPath := path.Join(".", "testdata", "client.key")
 
 	// start gRPC Jaeger server
-	tlsCfgOpts := configgrpc.TLSConfig{
-		CaCert:     caPath,
-		ClientCert: serverCertPath,
-		ClientKey:  serverKeyPath,
+	tlsCfgOpts := configtls.TLSServerSetting{
+		TLSSetting: configtls.TLSSetting{
+			CAFile:   caPath,
+			CertFile: serverCertPath,
+			KeyFile:  serverKeyPath,
+		},
 	}
 	tlsCfg, err := tlsCfgOpts.LoadTLSConfig()
 	require.NoError(t, err)
@@ -213,14 +208,16 @@ func TestMutualTLS(t *testing.T) {
 	// Create gRPC trace exporter
 	factory := &Factory{}
 	cfg := factory.CreateDefaultConfig().(*Config)
-	cfg.GRPCSettings = configgrpc.GRPCSettings{
+	cfg.GRPCClientSettings = configgrpc.GRPCClientSettings{
 		Endpoint: serverAddr.String(),
-		TLSConfig: configgrpc.TLSConfig{
-			UseSecure:          true,
-			CaCert:             caPath,
-			ClientCert:         clientCertPath,
-			ClientKey:          clientKeyPath,
-			ServerNameOverride: "localhost",
+		TLSSetting: configtls.TLSClientSetting{
+			TLSSetting: configtls.TLSSetting{
+				CAFile:   caPath,
+				CertFile: clientCertPath,
+				KeyFile:  clientKeyPath,
+			},
+			Insecure:   false,
+			ServerName: "localhost",
 		},
 	}
 	exporter, err := factory.CreateTraceExporter(context.Background(), component.ExporterCreateParams{}, cfg)

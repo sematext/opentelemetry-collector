@@ -1,4 +1,4 @@
-// Copyright 2019, OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -19,40 +19,49 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"io"
 	"net/http"
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 
+	"github.com/pkg/errors"
+	"github.com/prometheus/common/expfmt"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/config"
 	"go.opentelemetry.io/collector/config/configmodels"
+	"go.opentelemetry.io/collector/internal/version"
 	"go.opentelemetry.io/collector/service/defaultcomponents"
-	"go.opentelemetry.io/collector/testutils"
+	"go.opentelemetry.io/collector/testutil"
 )
 
 func TestApplication_Start(t *testing.T) {
 	factories, err := defaultcomponents.Components()
 	require.NoError(t, err)
 
-	app, err := New(Parameters{Factories: factories, ApplicationStartInfo: ApplicationStartInfo{}})
+	loggingHookCalled := false
+	hook := func(entry zapcore.Entry) error {
+		loggingHookCalled = true
+		return nil
+	}
+
+	app, err := New(Parameters{Factories: factories, ApplicationStartInfo: ApplicationStartInfo{}, LoggingHooks: []func(entry zapcore.Entry) error{hook}})
 	require.NoError(t, err)
 	assert.Equal(t, app.rootCmd, app.Command())
 
 	const testPrefix = "a_test"
-	metricsPort := testutils.GetAvailablePort(t)
+	metricsPort := testutil.GetAvailablePort(t)
 	app.rootCmd.SetArgs([]string{
 		"--config=testdata/otelcol-config.yaml",
 		"--metrics-addr=localhost:" + strconv.FormatUint(uint64(metricsPort), 10),
 		"--metrics-prefix=" + testPrefix,
-		"--add-instance-id=true",
 	})
 
 	appDone := make(chan struct{})
@@ -61,14 +70,106 @@ func TestApplication_Start(t *testing.T) {
 		assert.NoError(t, app.Start())
 	}()
 
-	<-app.readyChan
-
+	assert.Equal(t, Starting, <-app.GetStateChannel())
+	assert.Equal(t, Running, <-app.GetStateChannel())
 	require.True(t, isAppAvailable(t, "http://localhost:13133"))
+	assert.Equal(t, app.logger, app.GetLogger())
+	assert.True(t, loggingHookCalled)
 
-	assertMetricsPrefix(t, testPrefix, metricsPort)
+	// All labels added to all collector metrics by default are listed below.
+	// These labels are hard coded here in order to avoid inadvertent changes:
+	// at this point changing labels should be treated as a breaking changing
+	// and requires a good justification. The reason is that changes to metric
+	// names or labels can break alerting, dashboards, etc that are used to
+	// monitor the Collector in production deployments.
+	mandatoryLabels := []string{
+		"service_instance_id",
+	}
+	assertMetrics(t, testPrefix, metricsPort, mandatoryLabels)
 
-	close(app.stopTestChan)
+	app.signalsChannel <- syscall.SIGTERM
 	<-appDone
+	assert.Equal(t, Closing, <-app.GetStateChannel())
+	assert.Equal(t, Closed, <-app.GetStateChannel())
+}
+
+type mockAppTelemetry struct{}
+
+func (tel *mockAppTelemetry) init(asyncErrorChannel chan<- error, ballastSizeBytes uint64, logger *zap.Logger) error {
+	return nil
+}
+
+func (tel *mockAppTelemetry) shutdown() error {
+	return errors.New("err1")
+}
+
+func TestApplication_ReportError(t *testing.T) {
+	// use a mock AppTelemetry struct to return an error on shutdown
+	preservedAppTelemetry := applicationTelemetry
+	applicationTelemetry = &mockAppTelemetry{}
+	defer func() { applicationTelemetry = preservedAppTelemetry }()
+
+	factories, err := defaultcomponents.Components()
+	require.NoError(t, err)
+
+	app, err := New(Parameters{Factories: factories, ApplicationStartInfo: ApplicationStartInfo{}})
+	require.NoError(t, err)
+
+	app.rootCmd.SetArgs([]string{"--config=testdata/otelcol-config-minimal.yaml"})
+
+	appDone := make(chan struct{})
+	go func() {
+		defer close(appDone)
+		assert.EqualError(t, app.Start(), "failed to shutdown extensions: err1")
+	}()
+
+	assert.Equal(t, Starting, <-app.GetStateChannel())
+	assert.Equal(t, Running, <-app.GetStateChannel())
+	app.ReportFatalError(errors.New("err2"))
+	<-appDone
+	assert.Equal(t, Closing, <-app.GetStateChannel())
+	assert.Equal(t, Closed, <-app.GetStateChannel())
+}
+
+func TestApplication_StartAsGoRoutine(t *testing.T) {
+	factories, err := defaultcomponents.Components()
+	require.NoError(t, err)
+
+	params := Parameters{
+		ApplicationStartInfo: ApplicationStartInfo{
+			ExeName:  "otelcol",
+			LongName: "InProcess Collector",
+			Version:  version.Version,
+			GitHash:  version.GitHash,
+		},
+		ConfigFactory: func(v *viper.Viper, factories config.Factories) (*configmodels.Config, error) {
+			return constructMimumalOpConfig(t, factories), nil
+		},
+		Factories: factories,
+	}
+	app, err := New(params)
+	require.NoError(t, err)
+	app.Command().SetArgs([]string{
+		"--metrics-level=NONE",
+	})
+
+	appDone := make(chan struct{})
+	go func() {
+		defer close(appDone)
+		appErr := app.Start()
+		if appErr != nil {
+			err = appErr
+		}
+	}()
+
+	assert.Equal(t, Starting, <-app.GetStateChannel())
+	assert.Equal(t, Running, <-app.GetStateChannel())
+
+	app.SignalTestComplete()
+	app.SignalTestComplete()
+	<-appDone
+	assert.Equal(t, Closing, <-app.GetStateChannel())
+	assert.Equal(t, Closed, <-app.GetStateChannel())
 }
 
 // isAppAvailable checks if the healthcheck server at the given endpoint is
@@ -82,7 +183,7 @@ func isAppAvailable(t *testing.T, healthCheckEndPoint string) bool {
 	return resp.StatusCode == http.StatusOK
 }
 
-func assertMetricsPrefix(t *testing.T, prefix string, metricsPort uint16) {
+func assertMetrics(t *testing.T, prefix string, metricsPort uint16, mandatoryLabels []string) {
 	client := &http.Client{}
 	resp, err := client.Get(fmt.Sprintf("http://localhost:%d/metrics", metricsPort))
 	require.NoError(t, err)
@@ -90,25 +191,30 @@ func assertMetricsPrefix(t *testing.T, prefix string, metricsPort uint16) {
 	defer resp.Body.Close()
 	reader := bufio.NewReader(resp.Body)
 
-	for {
-		s, err := reader.ReadString('\n')
-		if err == io.EOF {
-			break
-		}
+	var parser expfmt.TextParser
+	parsed, err := parser.TextToMetricFamilies(reader)
+	require.NoError(t, err)
 
-		require.NoError(t, err)
-		if len(s) == 0 || s[0] == '#' {
-			// Skip this line since it is not a metric.
-			continue
-		}
-
+	for metricName, metricFamily := range parsed {
 		// require is used here so test fails with a single message.
 		require.True(
 			t,
-			strings.HasPrefix(s, prefix),
+			strings.HasPrefix(metricName, prefix),
 			"expected prefix %q but string starts with %q",
 			prefix,
-			s[:len(prefix)+1]+"...")
+			metricName[:len(prefix)+1]+"...")
+
+		for _, metric := range metricFamily.Metric {
+			var labelNames []string
+			for _, labelPair := range metric.Label {
+				labelNames = append(labelNames, *labelPair.Name)
+			}
+
+			for _, mandatoryLabel := range mandatoryLabels {
+				// require is used here so test fails with a single message.
+				require.Contains(t, labelNames, mandatoryLabel, "mandatory label %q not present", mandatoryLabel)
+			}
+		}
 	}
 }
 
@@ -351,7 +457,8 @@ func TestApplication_GetExtensions(t *testing.T) {
 		assert.NoError(t, app.Start())
 	}()
 
-	<-app.readyChan
+	assert.Equal(t, Starting, <-app.GetStateChannel())
+	assert.Equal(t, Running, <-app.GetStateChannel())
 
 	// Verify GetExensions(). The results must match what we have in testdata/otelcol-config.yaml.
 
@@ -379,7 +486,8 @@ func TestApplication_GetExporters(t *testing.T) {
 		assert.NoError(t, app.Start())
 	}()
 
-	<-app.readyChan
+	assert.Equal(t, Starting, <-app.GetStateChannel())
+	assert.Equal(t, Running, <-app.GetStateChannel())
 
 	// Verify GetExporters().
 
@@ -406,4 +514,35 @@ func TestApplication_GetExporters(t *testing.T) {
 	// Stop the Application.
 	close(app.stopTestChan)
 	<-appDone
+}
+
+func constructMimumalOpConfig(t *testing.T, factories config.Factories) *configmodels.Config {
+	configStr := `
+receivers:
+  otlp:
+    protocols:
+      grpc:
+exporters:
+  logging:
+processors:
+  batch:
+
+extensions:
+
+service:
+  extensions:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [logging]
+`
+	v := config.NewViper()
+	v.SetConfigType("yaml")
+	v.ReadConfig(strings.NewReader(configStr))
+	cfg, err := config.Load(v, factories)
+	assert.NoError(t, err)
+	err = config.ValidateConfig(cfg, zap.NewNop())
+	assert.NoError(t, err)
+	return cfg
 }

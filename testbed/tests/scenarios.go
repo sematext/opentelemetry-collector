@@ -1,4 +1,4 @@
-// Copyright 2019, OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -19,30 +19,33 @@ package tests
 
 import (
 	"fmt"
-	"io/ioutil"
 	"math/rand"
-	"os"
 	"path"
 	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/text/message"
 
 	"go.opentelemetry.io/collector/testbed/testbed"
 )
 
-// createConfigFile creates a collector config file that corresponds to the
-// sender and receiver used in the test and returns the config file name.
-func createConfigFile(
-	t *testing.T,
-	sender testbed.DataSender, // Sender to send test data.
-	receiver testbed.DataReceiver, // Receiver to receive test data.
-	resultDir string, // Directory to write config file to.
+var (
+	performanceResultsSummary testbed.TestResultsSummary = &testbed.PerformanceResults{}
+	printer                                              = message.NewPrinter(message.MatchLanguage("en"))
+)
 
-	// Map of processor names to their configs. Config is in YAML and must be
-	// indented by 2 spaces. Processors will be placed between batch and queue for traces
-	// pipeline. For metrics pipeline these will be sole processors.
+// createConfigYaml creates a collector config file that corresponds to the
+// sender and receiver used in the test and returns the config file name.
+// Map of processor names to their configs. Config is in YAML and must be
+// indented by 2 spaces. Processors will be placed between batch and queue for traces
+// pipeline. For metrics pipeline these will be sole processors.
+func createConfigYaml(
+	t *testing.T,
+	sender testbed.DataSender,
+	receiver testbed.DataReceiver,
+	resultDir string,
 	processors map[string]string,
 ) string {
 
@@ -98,7 +101,7 @@ service:
 `
 
 	// Put corresponding elements into the config template to generate the final config.
-	config := fmt.Sprintf(
+	return fmt.Sprintf(
 		format,
 		sender.GenConfigYAMLStr(),
 		receiver.GenConfigYAMLStr(),
@@ -109,28 +112,6 @@ service:
 		processorsList,
 		receiver.ProtocolName(),
 	)
-
-	// Write the config string to a temporary file.
-	file, err := ioutil.TempFile("", "agent*.yaml")
-	if err != nil {
-		t.Error(err)
-		return ""
-	}
-
-	defer func() {
-		errClose := file.Close()
-		if errClose != nil {
-			t.Error(err)
-		}
-	}()
-
-	if _, err = file.WriteString(config); err != nil {
-		t.Error(err)
-		return ""
-	}
-
-	// Return config file name.
-	return file.Name()
 }
 
 // Run 10k data items/sec test using specified sender and receiver protocols.
@@ -139,26 +120,40 @@ func Scenario10kItemsPerSecond(
 	sender testbed.DataSender,
 	receiver testbed.DataReceiver,
 	resourceSpec testbed.ResourceSpec,
+	resultsSummary testbed.TestResultsSummary,
 	processors map[string]string,
 ) {
 	resultDir, err := filepath.Abs(path.Join("results", t.Name()))
 	require.NoError(t, err)
 
-	configFile := createConfigFile(t, sender, receiver, resultDir, processors)
-	defer os.Remove(configFile)
-	require.NotEmpty(t, configFile, "Cannot create config file")
+	options := testbed.LoadOptions{
+		DataItemsPerSecond: 10_000,
+		ItemsPerBatch:      100,
+		Parallel:           1,
+	}
+	agentProc := &testbed.ChildProcess{}
+	configStr := createConfigYaml(t, sender, receiver, resultDir, processors)
+	configCleanup, err := agentProc.PrepareConfig(configStr)
+	require.NoError(t, err)
+	defer configCleanup()
 
-	tc := testbed.NewTestCase(t, sender, receiver, testbed.WithConfigFile(configFile))
+	dataProvider := testbed.NewPerfTestDataProvider(options)
+	tc := testbed.NewTestCase(
+		t,
+		dataProvider,
+		sender,
+		receiver,
+		agentProc,
+		&testbed.PerfTestValidator{},
+		resultsSummary,
+	)
 	defer tc.Stop()
 
 	tc.SetResourceLimits(resourceSpec)
 	tc.StartBackend()
 	tc.StartAgent()
 
-	tc.StartLoad(testbed.LoadOptions{
-		DataItemsPerSecond: 10000,
-		ItemsPerBatch:      100,
-	})
+	tc.StartLoad(options)
 
 	tc.Sleep(tc.Duration)
 
@@ -178,6 +173,7 @@ type TestCase struct {
 	attrSizeByte   int
 	expectedMaxCPU uint32
 	expectedMaxRAM uint32
+	resultsSummary testbed.TestResultsSummary
 }
 
 func genRandByteString(len int) string {
@@ -193,12 +189,18 @@ func genRandByteString(len int) string {
 func Scenario1kSPSWithAttrs(t *testing.T, args []string, tests []TestCase, opts ...testbed.TestCaseOption) {
 	for i := range tests {
 		test := tests[i]
+		options := constructLoadOptions(test)
+
 		t.Run(fmt.Sprintf("%d*%dbytes", test.attrCount, test.attrSizeByte), func(t *testing.T) {
 
 			tc := testbed.NewTestCase(
 				t,
-				testbed.NewJaegerGRPCDataSender(testbed.DefaultJaegerPort),
+				testbed.NewPerfTestDataProvider(options),
+				testbed.NewJaegerGRPCDataSender(testbed.DefaultHost, testbed.DefaultJaegerPort),
 				testbed.NewOCDataReceiver(testbed.DefaultOCPort),
+				&testbed.ChildProcess{},
+				&testbed.PerfTestValidator{},
+				test.resultsSummary,
 				opts...,
 			)
 			defer tc.Stop()
@@ -210,15 +212,6 @@ func Scenario1kSPSWithAttrs(t *testing.T, args []string, tests []TestCase, opts 
 
 			tc.StartBackend()
 			tc.StartAgent(args...)
-
-			options := testbed.LoadOptions{DataItemsPerSecond: 1000}
-			options.Attributes = make(map[string]string)
-
-			// Generate attributes.
-			for i := 0; i < test.attrCount; i++ {
-				attrName := genRandByteString(rand.Intn(199) + 1)
-				options.Attributes[attrName] = genRandByteString(rand.Intn(test.attrSizeByte*2-1) + 1)
-			}
 
 			tc.StartLoad(options)
 			tc.Sleep(tc.Duration)
@@ -244,21 +237,34 @@ type processorConfig struct {
 	ExpectedMinFinalRAM uint32
 }
 
-func ScenarioTestTraceNoBackend10kSPS(t *testing.T, sender testbed.DataSender, receiver testbed.DataReceiver,
-	resourceSpec testbed.ResourceSpec, configuration processorConfig) {
+func ScenarioTestTraceNoBackend10kSPS(
+	t *testing.T,
+	sender testbed.DataSender,
+	receiver testbed.DataReceiver,
+	resourceSpec testbed.ResourceSpec,
+	resultsSummary testbed.TestResultsSummary,
+	configuration processorConfig,
+) {
 
 	resultDir, err := filepath.Abs(path.Join("results", t.Name()))
 	require.NoError(t, err)
 
-	configFile := createConfigFile(t, sender, receiver, resultDir, configuration.Processor)
-	defer os.Remove(configFile)
-	require.NotEmpty(t, configFile, "Cannot create config file")
+	options := testbed.LoadOptions{DataItemsPerSecond: 10000, ItemsPerBatch: 10}
+	agentProc := &testbed.ChildProcess{}
+	configStr := createConfigYaml(t, sender, receiver, resultDir, configuration.Processor)
+	configCleanup, err := agentProc.PrepareConfig(configStr)
+	require.NoError(t, err)
+	defer configCleanup()
 
+	dataProvider := testbed.NewPerfTestDataProvider(options)
 	tc := testbed.NewTestCase(
 		t,
+		dataProvider,
 		sender,
 		receiver,
-		testbed.WithConfigFile(configFile),
+		agentProc,
+		&testbed.PerfTestValidator{},
+		resultsSummary,
 	)
 
 	defer tc.Stop()
@@ -266,10 +272,22 @@ func ScenarioTestTraceNoBackend10kSPS(t *testing.T, sender testbed.DataSender, r
 	tc.SetResourceLimits(resourceSpec)
 
 	tc.StartAgent()
-	tc.StartLoad(testbed.LoadOptions{DataItemsPerSecond: 10000, ItemsPerBatch: 10})
+	tc.StartLoad(options)
 
 	tc.Sleep(tc.Duration)
 
 	rss, _, _ := tc.AgentMemoryInfo()
 	assert.True(t, rss > configuration.ExpectedMinFinalRAM)
+}
+
+func constructLoadOptions(test TestCase) testbed.LoadOptions {
+	options := testbed.LoadOptions{DataItemsPerSecond: 1000}
+	options.Attributes = make(map[string]string)
+
+	// Generate attributes.
+	for i := 0; i < test.attrCount; i++ {
+		attrName := genRandByteString(rand.Intn(199) + 1)
+		options.Attributes[attrName] = genRandByteString(rand.Intn(test.attrSizeByte*2-1) + 1)
+	}
+	return options
 }

@@ -1,4 +1,4 @@
-// Copyright 2020 OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,8 +17,9 @@ package pdata
 import (
 	"encoding/hex"
 
-	"github.com/golang/protobuf/proto"
-	otlptrace "github.com/open-telemetry/opentelemetry-proto/gen/go/trace/v1"
+	"github.com/gogo/protobuf/proto"
+
+	otlptrace "go.opentelemetry.io/collector/internal/data/opentelemetry-proto-gen/trace/v1"
 )
 
 // This file defines in-memory data structures to represent traces (spans).
@@ -110,6 +111,10 @@ type TraceState string
 type SpanKind otlptrace.Span_SpanKind
 
 func (sk SpanKind) String() string { return otlptrace.Span_SpanKind(sk).String() }
+
+const (
+	TraceStateEmpty TraceState = ""
+)
 
 const (
 	SpanKindUNSPECIFIED = SpanKind(0)

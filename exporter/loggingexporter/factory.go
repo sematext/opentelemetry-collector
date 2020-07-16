@@ -1,4 +1,4 @@
-// Copyright 2019, OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -107,3 +107,21 @@ func (f *Factory) CreateMetricsExporter(_ context.Context, _ component.ExporterC
 	}
 	return lexp, nil
 }
+
+// CreateLogExporter creates a log exporter based on this config.
+func (f *Factory) CreateLogExporter(_ context.Context, _ component.ExporterCreateParams, config configmodels.Exporter) (component.LogExporter, error) {
+	cfg := config.(*Config)
+
+	exporterLogger, err := f.createLogger(cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	lexp, err := NewLogExporter(config, cfg.LogLevel, exporterLogger)
+	if err != nil {
+		return nil, err
+	}
+	return lexp, nil
+}
+
+var _ component.LogExporterFactory = (*Factory)(nil)

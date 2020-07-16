@@ -1,4 +1,4 @@
-// Copyright 2019, OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -617,7 +617,7 @@ func validateServiceExtensions(cfg *configmodels.Config) error {
 		if cfg.Extensions[ref] == nil {
 			return &configError{
 				code: errExtensionNotExists,
-				msg:  fmt.Sprintf("service references extension %q which does not exists", ref),
+				msg:  fmt.Sprintf("service references extension %q which does not exist", ref),
 			}
 		}
 	}
@@ -670,7 +670,7 @@ func validatePipelineReceivers(cfg *configmodels.Config, pipeline *configmodels.
 		if cfg.Receivers[ref] == nil {
 			return &configError{
 				code: errPipelineReceiverNotExists,
-				msg:  fmt.Sprintf("pipeline %q references receiver %q which does not exists", pipeline.Name, ref),
+				msg:  fmt.Sprintf("pipeline %q references receiver %q which does not exist", pipeline.Name, ref),
 			}
 		}
 	}
@@ -692,7 +692,7 @@ func validatePipelineExporters(cfg *configmodels.Config, pipeline *configmodels.
 		if cfg.Exporters[ref] == nil {
 			return &configError{
 				code: errPipelineExporterNotExists,
-				msg:  fmt.Sprintf("pipeline %q references exporter %q which does not exists", pipeline.Name, ref),
+				msg:  fmt.Sprintf("pipeline %q references exporter %q which does not exist", pipeline.Name, ref),
 			}
 		}
 	}
@@ -711,7 +711,7 @@ func validatePipelineProcessors(cfg *configmodels.Config, pipeline *configmodels
 		if cfg.Processors[ref] == nil {
 			return &configError{
 				code: errPipelineProcessorNotExists,
-				msg:  fmt.Sprintf("pipeline %q references processor %s which does not exists", pipeline.Name, ref),
+				msg:  fmt.Sprintf("pipeline %q references processor %s which does not exist", pipeline.Name, ref),
 			}
 		}
 	}
@@ -755,7 +755,7 @@ func expandStringValues(value interface{}) interface{} {
 	default:
 		return v
 	case string:
-		return os.ExpandEnv(v)
+		return expandEnv(v)
 	case []interface{}:
 		nslice := make([]interface{}, 0, len(v))
 		for _, vint := range v {
@@ -769,6 +769,19 @@ func expandStringValues(value interface{}) interface{} {
 		}
 		return nmap
 	}
+}
+
+func expandEnv(s string) string {
+	return os.Expand(s, func(str string) string {
+		// This allows escaping environment variable substitution via $$, e.g.
+		// - $FOO will be substituted with env var FOO
+		// - $$FOO will be replaced with $FOO
+		// - $$$FOO will be replaced with $ + substituted env var FOO
+		if str == "$" {
+			return "$"
+		}
+		return os.Getenv(str)
+	})
 }
 
 // Copied from the Viper but changed to use the same delimiter.

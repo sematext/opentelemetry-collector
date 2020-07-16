@@ -1,5 +1,5 @@
-// Copyright 2019 OpenTelemetry Authors
-// Copyright 2020 OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -80,14 +80,6 @@ func generateOCTestDataNoPoints() consumerdata.MetricsData {
 			},
 			{
 				MetricDescriptor: &ocmetrics.MetricDescriptor{
-					Name:        "gauge-histogram",
-					Description: "",
-					Unit:        "1",
-					Type:        ocmetrics.MetricDescriptor_GAUGE_DISTRIBUTION,
-				},
-			},
-			{
-				MetricDescriptor: &ocmetrics.MetricDescriptor{
 					Name:        "cumulative-histogram",
 					Description: "",
 					Unit:        "1",
@@ -111,27 +103,6 @@ func generateOCTestDataNoLabels() consumerdata.MetricsData {
 	m.MetricDescriptor.LabelKeys = nil
 	m.Timeseries[0].LabelValues = nil
 	m.Timeseries[1].LabelValues = nil
-	return consumerdata.MetricsData{
-		Node: &occommon.Node{},
-		Resource: &ocresource.Resource{
-			Labels: map[string]string{"resource-attr": "resource-attr-val-1"},
-		},
-		Metrics: []*ocmetrics.Metric{m},
-	}
-}
-
-func generateOCTestDataMetricsInDescriptor() consumerdata.MetricsData {
-	m := generateOCTestMetricInt()
-	m.MetricDescriptor.LabelKeys = append(m.MetricDescriptor.LabelKeys, &ocmetrics.LabelKey{Key: testdata.TestLabelKey3})
-	m.Timeseries[0].LabelValues = append(m.Timeseries[0].LabelValues, &ocmetrics.LabelValue{
-		Value:    testdata.TestLabelValue3,
-		HasValue: true,
-	})
-	m.Timeseries[1].LabelValues = append(m.Timeseries[1].LabelValues, &ocmetrics.LabelValue{
-		Value:    testdata.TestLabelValue3,
-		HasValue: true,
-	})
-
 	return consumerdata.MetricsData{
 		Node: &occommon.Node{},
 		Resource: &ocresource.Resource{
@@ -492,16 +463,16 @@ func generateResourceWithOcNodeAndResource() pdata.Resource {
 	resource := pdata.NewResource()
 	resource.InitEmpty()
 	resource.Attributes().InitFromMap(map[string]pdata.AttributeValue{
-		conventions.OCAttributeProcessStartTime: pdata.NewAttributeValueString("2020-02-11T20:26:00Z"),
-		conventions.AttributeHostHostname:       pdata.NewAttributeValueString("host1"),
-		conventions.OCAttributeProcessID:        pdata.NewAttributeValueInt(123),
-		conventions.AttributeLibraryVersion:     pdata.NewAttributeValueString("v2.0.1"),
-		conventions.OCAttributeExporterVersion:  pdata.NewAttributeValueString("v1.2.0"),
-		conventions.AttributeLibraryLanguage:    pdata.NewAttributeValueString("CPP"),
-		conventions.OCAttributeResourceType:     pdata.NewAttributeValueString("good-resource"),
-		"node-str-attr":                         pdata.NewAttributeValueString("node-str-attr-val"),
-		"resource-str-attr":                     pdata.NewAttributeValueString("resource-str-attr-val"),
-		"resource-int-attr":                     pdata.NewAttributeValueInt(123),
+		conventions.OCAttributeProcessStartTime:   pdata.NewAttributeValueString("2020-02-11T20:26:00Z"),
+		conventions.AttributeHostHostname:         pdata.NewAttributeValueString("host1"),
+		conventions.OCAttributeProcessID:          pdata.NewAttributeValueInt(123),
+		conventions.AttributeTelemetrySDKVersion:  pdata.NewAttributeValueString("v2.0.1"),
+		conventions.OCAttributeExporterVersion:    pdata.NewAttributeValueString("v1.2.0"),
+		conventions.AttributeTelemetrySDKLanguage: pdata.NewAttributeValueString("CPP"),
+		conventions.OCAttributeResourceType:       pdata.NewAttributeValueString("good-resource"),
+		"node-str-attr":                           pdata.NewAttributeValueString("node-str-attr-val"),
+		"resource-str-attr":                       pdata.NewAttributeValueString("resource-str-attr-val"),
+		"resource-int-attr":                       pdata.NewAttributeValueInt(123),
 	})
 	return resource
 }

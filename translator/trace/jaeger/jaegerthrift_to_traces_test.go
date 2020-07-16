@@ -1,4 +1,4 @@
-// Copyright 2020, OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -152,9 +152,11 @@ func generateThriftSpan() *jaeger.Span {
 	spanEndTs := unixNanoToMicroseconds(testSpanEndTimestamp)
 	eventTs := unixNanoToMicroseconds(testSpanEventTimestamp)
 	intAttrVal := int64(123)
-	eventAttrVal := "event-with-attr"
+	eventName := "event-with-attr"
+	eventStrAttrVal := "span-event-attr-val"
 	statusCode := int64(tracetranslator.OCCancelled)
 	statusMsg := "status-cancelled"
+	kind := string(tracetranslator.OpenTracingSpanKindClient)
 
 	return &jaeger.Span{
 		TraceIdHigh:   int64(binary.BigEndian.Uint64([]byte{0xF1, 0xF2, 0xF3, 0xF4, 0xF5, 0xF6, 0xF7, 0xF8})),
@@ -168,9 +170,14 @@ func generateThriftSpan() *jaeger.Span {
 				Timestamp: eventTs,
 				Fields: []*jaeger.Tag{
 					{
-						Key:   "message",
+						Key:   tracetranslator.TagMessage,
 						VType: jaeger.TagType_STRING,
-						VStr:  &eventAttrVal,
+						VStr:  &eventName,
+					},
+					{
+						Key:   "span-event-attr",
+						VType: jaeger.TagType_STRING,
+						VStr:  &eventStrAttrVal,
 					},
 				},
 			},
@@ -196,6 +203,11 @@ func generateThriftSpan() *jaeger.Span {
 				VType: jaeger.TagType_STRING,
 				VStr:  &statusMsg,
 			},
+			{
+				Key:   tracetranslator.TagSpanKind,
+				VType: jaeger.TagType_STRING,
+				VStr:  &kind,
+			},
 		},
 	}
 }
@@ -204,6 +216,7 @@ func generateThriftChildSpan() *jaeger.Span {
 	spanStartTs := unixNanoToMicroseconds(testSpanStartTimestamp)
 	spanEndTs := unixNanoToMicroseconds(testSpanEndTimestamp)
 	notFoundAttrVal := int64(404)
+	kind := string(tracetranslator.OpenTracingSpanKindServer)
 
 	return &jaeger.Span{
 		TraceIdHigh:   int64(binary.BigEndian.Uint64([]byte{0xF1, 0xF2, 0xF3, 0xF4, 0xF5, 0xF6, 0xF7, 0xF8})),
@@ -219,6 +232,11 @@ func generateThriftChildSpan() *jaeger.Span {
 				VType: jaeger.TagType_LONG,
 				VLong: &notFoundAttrVal,
 			},
+			{
+				Key:   tracetranslator.TagSpanKind,
+				VType: jaeger.TagType_STRING,
+				VStr:  &kind,
+			},
 		},
 	}
 }
@@ -226,6 +244,8 @@ func generateThriftChildSpan() *jaeger.Span {
 func generateThriftFollowerSpan() *jaeger.Span {
 	statusCode := int64(tracetranslator.OCOK)
 	statusMsg := "status-ok"
+	kind := string(tracetranslator.OpenTracingSpanKindConsumer)
+
 	return &jaeger.Span{
 		TraceIdHigh:   int64(binary.BigEndian.Uint64([]byte{0xF1, 0xF2, 0xF3, 0xF4, 0xF5, 0xF6, 0xF7, 0xF8})),
 		TraceIdLow:    int64(binary.BigEndian.Uint64([]byte{0xF9, 0xFA, 0xFB, 0xFC, 0xFD, 0xFE, 0xFF, 0x80})),
@@ -243,6 +263,11 @@ func generateThriftFollowerSpan() *jaeger.Span {
 				Key:   tracetranslator.TagStatusMsg,
 				VType: jaeger.TagType_STRING,
 				VStr:  &statusMsg,
+			},
+			{
+				Key:   tracetranslator.TagSpanKind,
+				VType: jaeger.TagType_STRING,
+				VStr:  &kind,
 			},
 		},
 		References: []*jaeger.SpanRef{

@@ -1,4 +1,4 @@
-// Copyright 2019, OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,13 +16,13 @@ package jaegerexporter
 
 import (
 	"context"
+	"fmt"
 
 	jaegerproto "github.com/jaegertracing/jaeger/proto-gen/api_v2"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 
 	"go.opentelemetry.io/collector/component"
-	"go.opentelemetry.io/collector/config/configgrpc"
 	"go.opentelemetry.io/collector/consumer/consumererror"
 	"go.opentelemetry.io/collector/consumer/pdata"
 	"go.opentelemetry.io/collector/exporter/exporterhelper"
@@ -34,12 +34,12 @@ import (
 // The collectorEndpoint should be of the form "hostname:14250" (a gRPC target).
 func New(config *Config) (component.TraceExporter, error) {
 
-	opts, err := configgrpc.GrpcSettingsToDialOptions(config.GRPCSettings)
+	opts, err := config.GRPCClientSettings.ToDialOptions()
 	if err != nil {
 		return nil, err
 	}
 
-	client, err := grpc.Dial(config.GRPCSettings.Endpoint, opts...)
+	client, err := grpc.Dial(config.GRPCClientSettings.Endpoint, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -47,7 +47,7 @@ func New(config *Config) (component.TraceExporter, error) {
 	collectorServiceClient := jaegerproto.NewCollectorServiceClient(client)
 	s := &protoGRPCSender{
 		client:       collectorServiceClient,
-		metadata:     metadata.New(config.GRPCSettings.Headers),
+		metadata:     metadata.New(config.GRPCClientSettings.Headers),
 		waitForReady: config.WaitForReady,
 	}
 
@@ -71,7 +71,7 @@ func (s *protoGRPCSender) pushTraceData(
 
 	batches, err := jaegertranslator.InternalTracesToJaegerProto(td)
 	if err != nil {
-		return td.SpanCount(), consumererror.Permanent(err)
+		return td.SpanCount(), consumererror.Permanent(fmt.Errorf("failed to push trace data via Jaeger exporter: %w", err))
 	}
 
 	if s.metadata.Len() > 0 {
@@ -84,7 +84,7 @@ func (s *protoGRPCSender) pushTraceData(
 			ctx,
 			&jaegerproto.PostSpansRequest{Batch: *batch}, grpc.WaitForReady(s.waitForReady))
 		if err != nil {
-			return td.SpanCount() - sentSpans, err
+			return td.SpanCount() - sentSpans, fmt.Errorf("failed to push trace data via Jaeger exporter: %w", err)
 		}
 		sentSpans += len(batch.Spans)
 	}

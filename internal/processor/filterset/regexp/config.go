@@ -1,4 +1,4 @@
-// Copyright 2020 OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@
 
 package regexp
 
-// RegexpConfig represents the options for a NewRegexpFilterSet.
+// RegexpConfig represents the options for a NewFilterSet.
 type Config struct {
 	// CacheEnabled determines whether match results are LRU cached to make subsequent matches faster.
 	// Cache size is unlimited unless CacheMaxNumEntries is also specified.
@@ -22,14 +22,4 @@ type Config struct {
 	// CacheMaxNumEntries is the max number of entries of the LRU cache that stores match results.
 	// CacheMaxNumEntries is ignored if CacheEnabled is false.
 	CacheMaxNumEntries int `mapstructure:"cachemaxnumentries"`
-}
-
-// CreateFilterSet creates a regexp FilterSet from yaml config.
-func CreateRegexpFilterSet(filters []string, cfg *Config) (*FilterSet, error) {
-	opts := []Option{}
-	if cfg != nil && cfg.CacheEnabled {
-		opts = append(opts, WithCache(cfg.CacheMaxNumEntries))
-	}
-
-	return NewRegexpFilterSet(filters, opts...)
 }

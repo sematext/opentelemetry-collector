@@ -7,11 +7,13 @@ receivers:
     collection_interval: 1m
     scrapers:
       cpu:
-        report_per_cpu: false
+      load:
       memory:
       disk:
       filesystem:
       network:
+      processes:
+      swap:
 
 exporters:
   logging:

@@ -1,4 +1,4 @@
-// Copyright 2020, OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,12 +17,10 @@ package trace
 import (
 	"context"
 
-	collectortrace "github.com/open-telemetry/opentelemetry-proto/gen/go/collector/trace/v1"
-
 	"go.opentelemetry.io/collector/client"
-	"go.opentelemetry.io/collector/component/componenterror"
 	"go.opentelemetry.io/collector/consumer"
 	"go.opentelemetry.io/collector/consumer/pdata"
+	collectortrace "go.opentelemetry.io/collector/internal/data/opentelemetry-proto-gen/collector/trace/v1"
 	"go.opentelemetry.io/collector/obsreport"
 )
 
@@ -37,17 +35,13 @@ type Receiver struct {
 }
 
 // New creates a new Receiver reference.
-func New(instanceName string, nextConsumer consumer.TraceConsumer) (*Receiver, error) {
-	if nextConsumer == nil {
-		return nil, componenterror.ErrNilNextConsumer
-	}
-
+func New(instanceName string, nextConsumer consumer.TraceConsumer) *Receiver {
 	r := &Receiver{
 		instanceName: instanceName,
 		nextConsumer: nextConsumer,
 	}
 
-	return r, nil
+	return r
 }
 
 const (
@@ -69,22 +63,18 @@ func (r *Receiver) Export(ctx context.Context, req *collectortrace.ExportTraceSe
 }
 
 func (r *Receiver) sendToNextConsumer(ctx context.Context, td pdata.Traces) error {
+	numSpans := td.SpanCount()
+	if numSpans == 0 {
+		return nil
+	}
+
 	if c, ok := client.FromGRPC(ctx); ok {
 		ctx = client.NewContext(ctx, c)
 	}
 
-	ctx = obsreport.StartTraceDataReceiveOp(
-		ctx,
-		r.instanceName,
-		receiverTransport)
+	ctx = obsreport.StartTraceDataReceiveOp(ctx, r.instanceName, receiverTransport)
+	err := r.nextConsumer.ConsumeTraces(ctx, td)
+	obsreport.EndTraceDataReceiveOp(ctx, dataFormatProtobuf, numSpans, err)
 
-	var consumerErr error
-	numSpans := td.SpanCount()
-	if numSpans != 0 {
-		consumerErr = r.nextConsumer.ConsumeTraces(ctx, td)
-	}
-
-	obsreport.EndTraceDataReceiveOp(ctx, dataFormatProtobuf, numSpans, consumerErr)
-
-	return consumerErr
+	return err
 }

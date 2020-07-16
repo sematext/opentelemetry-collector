@@ -1,4 +1,4 @@
-// Copyright 2019, OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -32,7 +32,7 @@ import (
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/component/componenterror"
 	"go.opentelemetry.io/collector/consumer"
-	"go.opentelemetry.io/collector/observability"
+	"go.opentelemetry.io/collector/obsreport"
 	"go.opentelemetry.io/collector/receiver/opencensusreceiver/ocmetrics"
 	"go.opentelemetry.io/collector/receiver/opencensusreceiver/octrace"
 )
@@ -137,7 +137,7 @@ func (ocr *Receiver) grpcServer() *grpc.Server {
 	defer ocr.mu.Unlock()
 
 	if ocr.serverGRPC == nil {
-		ocr.serverGRPC = observability.GRPCServerWithObservabilityEnabled(ocr.grpcServerOptions...)
+		ocr.serverGRPC = obsreport.GRPCServerWithObservabilityEnabled(ocr.grpcServerOptions...)
 	}
 
 	return ocr.serverGRPC

@@ -1,4 +1,4 @@
-// Copyright 2019, OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -39,7 +39,7 @@ func loggerFlags(flags *flag.FlagSet) {
 	loggerProfilePtr = flags.String(logProfileCfg, "", "Logging profile to use (dev, prod)")
 }
 
-func newLogger() (*zap.Logger, error) {
+func newLogger(hooks ...func(zapcore.Entry) error) (*zap.Logger, error) {
 	var level zapcore.Level
 	err := (&level).UnmarshalText([]byte(*loggerLevelPtr))
 	if err != nil {
@@ -62,5 +62,5 @@ func newLogger() (*zap.Logger, error) {
 	}
 
 	conf.Level.SetLevel(level)
-	return conf.Build()
+	return conf.Build(zap.Hooks(hooks...))
 }

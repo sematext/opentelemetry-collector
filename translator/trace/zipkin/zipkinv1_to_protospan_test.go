@@ -1,4 +1,4 @@
-// Copyright 2019, OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@ import (
 	"sort"
 	"strconv"
 	"testing"
+	"time"
 
 	commonpb "github.com/census-instrumentation/opencensus-proto/gen-go/agent/common/v1"
 	tracepb "github.com/census-instrumentation/opencensus-proto/gen-go/trace/v1"
@@ -30,6 +31,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.opentelemetry.io/collector/consumer/consumerdata"
+	"go.opentelemetry.io/collector/internal"
 	tracetranslator "go.opentelemetry.io/collector/translator/trace"
 )
 
@@ -139,17 +141,11 @@ func Test_hexTraceIDToOCTraceID(t *testing.T) {
 
 func TestZipkinJSONFallbackToLocalComponent(t *testing.T) {
 	blob, err := ioutil.ReadFile("./testdata/zipkin_v1_local_component.json")
-	if err != nil {
-		t.Fatalf("failed to load test data: %v", err)
-	}
-	reqs, err := V1JSONBatchToOCProto(blob)
-	if err != nil {
-		t.Fatalf("failed to translate zipkinv1 to OC proto: %v", err)
-	}
+	require.NoError(t, err, "Failed to load test data")
 
-	if len(reqs) != 2 {
-		t.Fatalf("got %d trace service request(s), want 2", len(reqs))
-	}
+	reqs, err := V1JSONBatchToOCProto(blob)
+	require.NoError(t, err, "Failed to translate zipkinv1 to OC proto")
+	require.Equal(t, 2, len(reqs), "Invalid trace service requests count")
 
 	// Ensure the order of nodes
 	sort.Slice(reqs, func(i, j int) bool {
@@ -158,61 +154,43 @@ func TestZipkinJSONFallbackToLocalComponent(t *testing.T) {
 
 	// First span didn't have a host/endpoint to give service name, use the local component.
 	got := reqs[0].Node.ServiceInfo.Name
-	want := "myLocalComponent"
-	if got != want {
-		t.Fatalf("got %q for service name, want %q", got, want)
-	}
+	require.Equal(t, "myLocalComponent", got)
 
 	// Second span have a host/endpoint to give service name, do not use local component.
 	got = reqs[1].Node.ServiceInfo.Name
-	want = "myServiceName"
-	if got != want {
-		t.Fatalf("got %q for service name, want %q", got, want)
-	}
+	require.Equal(t, "myServiceName", got)
 }
 
 func TestSingleJSONV1BatchToOCProto(t *testing.T) {
 	blob, err := ioutil.ReadFile("./testdata/zipkin_v1_single_batch.json")
-	if err != nil {
-		t.Fatalf("failed to load test data: %v", err)
-	}
+	require.NoError(t, err, "Failed to load test data")
+
 	got, err := V1JSONBatchToOCProto(blob)
-	if err != nil {
-		t.Fatalf("failed to translate zipkinv1 to OC proto: %v", err)
-	}
+	require.NoError(t, err, "Failed to translate zipkinv1 to OC proto")
 
 	want := ocBatchesFromZipkinV1
 	sortTraceByNodeName(want)
 	sortTraceByNodeName(got)
 
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("Unsuccessful conversion\nGot:\n\t%v\nWant:\n\t%v", got, want)
-	}
+	assert.EqualValues(t, got, want)
 }
 
 func TestMultipleJSONV1BatchesToOCProto(t *testing.T) {
 	blob, err := ioutil.ReadFile("./testdata/zipkin_v1_multiple_batches.json")
-	if err != nil {
-		t.Fatalf("failed to load test data: %v", err)
-	}
+	require.NoError(t, err, "Failed to load test data")
 
 	var batches []interface{}
-	if err := json.Unmarshal(blob, &batches); err != nil {
-		t.Fatalf("failed to load the batches: %v", err)
-	}
+	err = json.Unmarshal(blob, &batches)
+	require.NoError(t, err, "Failed to load the batches")
 
 	nodeToTraceReqs := make(map[string]*consumerdata.TraceData)
 	var got []consumerdata.TraceData
 	for _, batch := range batches {
 		jsonBatch, err := json.Marshal(batch)
-		if err != nil {
-			t.Fatalf("failed to marshal interface back to blob: %v", err)
-		}
+		require.NoError(t, err, "Failed to marshal interface back to blob")
 
 		g, err := V1JSONBatchToOCProto(jsonBatch)
-		if err != nil {
-			t.Fatalf("failed to translate zipkinv1 to OC proto: %v", err)
-		}
+		require.NoError(t, err, "Failed to translate zipkinv1 to OC proto")
 
 		// Coalesce the nodes otherwise they will differ due to multiple
 		// nodes representing same logical service
@@ -234,9 +212,7 @@ func TestMultipleJSONV1BatchesToOCProto(t *testing.T) {
 	sortTraceByNodeName(want)
 	sortTraceByNodeName(got)
 
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("Unsuccessful conversion\nGot:\n\t%v\nWant:\n\t%v", got, want)
-	}
+	assert.EqualValues(t, got, want)
 }
 
 func sortTraceByNodeName(trace []consumerdata.TraceData) {
@@ -247,14 +223,15 @@ func sortTraceByNodeName(trace []consumerdata.TraceData) {
 
 func TestZipkinAnnotationsToOCStatus(t *testing.T) {
 	type test struct {
+		name           string
 		haveTags       []*binaryAnnotation
 		wantAttributes *tracepb.Span_Attributes
 		wantStatus     *tracepb.Status
 	}
 
 	cases := []test{
-		// only status.code tag
 		{
+			name: "only status.code tag",
 			haveTags: []*binaryAnnotation{{
 				Key:   "status.code",
 				Value: "13",
@@ -264,8 +241,9 @@ func TestZipkinAnnotationsToOCStatus(t *testing.T) {
 				Code: 13,
 			},
 		},
-		// only status.message tag
+
 		{
+			name: "only status.message tag",
 			haveTags: []*binaryAnnotation{{
 				Key:   "status.message",
 				Value: "Forbidden",
@@ -273,8 +251,9 @@ func TestZipkinAnnotationsToOCStatus(t *testing.T) {
 			wantAttributes: nil,
 			wantStatus:     nil,
 		},
-		// both status.code and status.message
+
 		{
+			name: "both status.code and status.message",
 			haveTags: []*binaryAnnotation{
 				{
 					Key:   "status.code",
@@ -292,8 +271,8 @@ func TestZipkinAnnotationsToOCStatus(t *testing.T) {
 			},
 		},
 
-		// http status.code
 		{
+			name: "http status.code",
 			haveTags: []*binaryAnnotation{
 				{
 					Key:   "http.status_code",
@@ -324,8 +303,8 @@ func TestZipkinAnnotationsToOCStatus(t *testing.T) {
 			},
 		},
 
-		// http and oc
 		{
+			name: "http and oc",
 			haveTags: []*binaryAnnotation{
 				{
 					Key:   "http.status_code",
@@ -364,8 +343,8 @@ func TestZipkinAnnotationsToOCStatus(t *testing.T) {
 			},
 		},
 
-		// http and only oc code
 		{
+			name: "http and only oc code",
 			haveTags: []*binaryAnnotation{
 				{
 					Key:   "http.status_code",
@@ -398,8 +377,9 @@ func TestZipkinAnnotationsToOCStatus(t *testing.T) {
 				Code: 14,
 			},
 		},
-		// http and only oc message
+
 		{
+			name: "http and only oc message",
 			haveTags: []*binaryAnnotation{
 				{
 					Key:   "http.status_code",
@@ -434,8 +414,8 @@ func TestZipkinAnnotationsToOCStatus(t *testing.T) {
 			},
 		},
 
-		// census tags
 		{
+			name: "census tags",
 			haveTags: []*binaryAnnotation{
 				{
 					Key:   "census.status_code",
@@ -453,8 +433,8 @@ func TestZipkinAnnotationsToOCStatus(t *testing.T) {
 			},
 		},
 
-		// census tags priority over others
 		{
+			name: "census tags priority over others",
 			haveTags: []*binaryAnnotation{
 				{
 					Key:   "census.status_code",
@@ -506,31 +486,71 @@ func TestZipkinAnnotationsToOCStatus(t *testing.T) {
 	fakeSpanID := "0000000000000001"
 
 	for i, c := range cases {
-		zSpans := []*zipkinV1Span{{
-			ID:                fakeSpanID,
-			TraceID:           fakeTraceID,
-			BinaryAnnotations: c.haveTags,
-		}}
-		zBytes, err := json.Marshal(zSpans)
-		if err != nil {
-			t.Errorf("#%d: Unexpected error: %v", i, err)
-			continue
-		}
-		gb, err := V1JSONBatchToOCProto(zBytes)
-		if err != nil {
-			t.Errorf("#%d: Unexpected error: %v", i, err)
-			continue
-		}
-		gs := gb[0].Spans[0]
-
-		if !reflect.DeepEqual(gs.Attributes, c.wantAttributes) {
-			t.Fatalf("Unsuccessful conversion\nGot:\n\t%v\nWant:\n\t%v", gs.Attributes, c.wantAttributes)
-		}
-
-		if !reflect.DeepEqual(gs.Status, c.wantStatus) {
-			t.Fatalf("Unsuccessful conversion: %d\nGot:\n\t%v\nWant:\n\t%v", i, gs.Status, c.wantStatus)
-		}
+		t.Run(c.name, func(t *testing.T) {
+			zSpans := []*zipkinV1Span{{
+				ID:                fakeSpanID,
+				TraceID:           fakeTraceID,
+				BinaryAnnotations: c.haveTags,
+				Timestamp:         1,
+			}}
+			zBytes, err := json.Marshal(zSpans)
+			if err != nil {
+				t.Errorf("#%d: Unexpected error: %v", i, err)
+				return
+			}
+			gb, err := V1JSONBatchToOCProto(zBytes)
+			if err != nil {
+				t.Errorf("#%d: Unexpected error: %v", i, err)
+				return
+			}
+			gs := gb[0].Spans[0]
+			require.Equal(t, c.wantAttributes, gs.Attributes, "Unsuccessful conversion %d", i)
+			require.Equal(t, c.wantStatus, gs.Status, "Unsuccessful conversion %d", i)
+		})
 	}
+}
+
+func TestSpanWithoutTimestampGetsTag(t *testing.T) {
+	fakeTraceID := "00000000000000010000000000000002"
+	fakeSpanID := "0000000000000001"
+	zSpans := []*zipkinV1Span{
+		{
+			ID:        fakeSpanID,
+			TraceID:   fakeTraceID,
+			Timestamp: 0, // no timestamp field
+		},
+	}
+	zBytes, err := json.Marshal(zSpans)
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+		return
+	}
+
+	testStart := time.Now()
+
+	gb, err := V1JSONBatchToOCProto(zBytes)
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+		return
+	}
+
+	gs := gb[0].Spans[0]
+	assert.NotNil(t, gs.StartTime)
+	assert.NotNil(t, gs.EndTime)
+
+	assert.True(t, internal.TimestampToTime(gs.StartTime).Sub(testStart) >= 0)
+
+	wantAttributes := &tracepb.Span_Attributes{
+		AttributeMap: map[string]*tracepb.AttributeValue{
+			StartTimeAbsent: {
+				Value: &tracepb.AttributeValue_BoolValue{
+					BoolValue: true,
+				},
+			},
+		},
+	}
+
+	assert.EqualValues(t, gs.Attributes, wantAttributes)
 }
 
 func TestJSONHTTPToGRPCStatusCode(t *testing.T) {
@@ -559,9 +579,7 @@ func TestJSONHTTPToGRPCStatusCode(t *testing.T) {
 		}
 
 		gs := gb[0].Spans[0]
-		if !reflect.DeepEqual(gs.Status.Code, wantStatus) {
-			t.Fatalf("Unsuccessful conversion: %d\nGot:\n\t%v\nWant:\n\t%v", i, gs.Status, wantStatus)
-		}
+		require.Equal(t, wantStatus, gs.Status.Code, "Unsuccessful conversion %d", i)
 	}
 }
 
@@ -582,38 +600,7 @@ var ocBatchesFromZipkinV1 = []consumerdata.TraceData{
 				Kind:         tracepb.Span_CLIENT,
 				StartTime:    &timestamp.Timestamp{Seconds: 1544805927, Nanos: 446743000},
 				EndTime:      &timestamp.Timestamp{Seconds: 1544805927, Nanos: 459699000},
-				TimeEvents: &tracepb.Span_TimeEvents{
-					TimeEvent: []*tracepb.Span_TimeEvent{
-						{
-							Time: &timestamp.Timestamp{Seconds: 1544805927, Nanos: 446743000},
-							Value: &tracepb.Span_TimeEvent_Annotation_{
-								Annotation: &tracepb.Span_TimeEvent_Annotation{
-									Attributes: &tracepb.Span_Attributes{
-										AttributeMap: map[string]*tracepb.AttributeValue{
-											"cs": {
-												Value: &tracepb.AttributeValue_StringValue{StringValue: &tracepb.TruncatableString{Value: "front-proxy"}},
-											},
-										},
-									},
-								},
-							},
-						},
-						{
-							Time: &timestamp.Timestamp{Seconds: 1544805927, Nanos: 460510000},
-							Value: &tracepb.Span_TimeEvent_Annotation_{
-								Annotation: &tracepb.Span_TimeEvent_Annotation{
-									Attributes: &tracepb.Span_Attributes{
-										AttributeMap: map[string]*tracepb.AttributeValue{
-											"cr": {
-												Value: &tracepb.AttributeValue_StringValue{StringValue: &tracepb.TruncatableString{Value: "front-proxy"}},
-											},
-										},
-									},
-								},
-							},
-						},
-					},
-				},
+				TimeEvents:   nil,
 			},
 		},
 	},
@@ -634,30 +621,10 @@ var ocBatchesFromZipkinV1 = []consumerdata.TraceData{
 				TimeEvents: &tracepb.Span_TimeEvents{
 					TimeEvent: []*tracepb.Span_TimeEvent{
 						{
-							Time: &timestamp.Timestamp{Seconds: 1544805927, Nanos: 448081000},
+							Time: &timestamp.Timestamp{Seconds: 1544805927, Nanos: 450000000},
 							Value: &tracepb.Span_TimeEvent_Annotation_{
 								Annotation: &tracepb.Span_TimeEvent_Annotation{
-									Attributes: &tracepb.Span_Attributes{
-										AttributeMap: map[string]*tracepb.AttributeValue{
-											"sr": {
-												Value: &tracepb.AttributeValue_StringValue{StringValue: &tracepb.TruncatableString{Value: "service1"}},
-											},
-										},
-									},
-								},
-							},
-						},
-						{
-							Time: &timestamp.Timestamp{Seconds: 1544805927, Nanos: 460102000},
-							Value: &tracepb.Span_TimeEvent_Annotation_{
-								Annotation: &tracepb.Span_TimeEvent_Annotation{
-									Attributes: &tracepb.Span_Attributes{
-										AttributeMap: map[string]*tracepb.AttributeValue{
-											"ss": {
-												Value: &tracepb.AttributeValue_StringValue{StringValue: &tracepb.TruncatableString{Value: "service1"}},
-											},
-										},
-									},
+									Description: &tracepb.TruncatableString{Value: "custom time event"},
 								},
 							},
 						},
@@ -672,38 +639,7 @@ var ocBatchesFromZipkinV1 = []consumerdata.TraceData{
 				Kind:         tracepb.Span_CLIENT,
 				StartTime:    &timestamp.Timestamp{Seconds: 1544805927, Nanos: 453923000},
 				EndTime:      &timestamp.Timestamp{Seconds: 1544805927, Nanos: 457663000},
-				TimeEvents: &tracepb.Span_TimeEvents{
-					TimeEvent: []*tracepb.Span_TimeEvent{
-						{
-							Time: &timestamp.Timestamp{Seconds: 1544805927, Nanos: 453923000},
-							Value: &tracepb.Span_TimeEvent_Annotation_{
-								Annotation: &tracepb.Span_TimeEvent_Annotation{
-									Attributes: &tracepb.Span_Attributes{
-										AttributeMap: map[string]*tracepb.AttributeValue{
-											"cs": {
-												Value: &tracepb.AttributeValue_StringValue{StringValue: &tracepb.TruncatableString{Value: "service1"}},
-											},
-										},
-									},
-								},
-							},
-						},
-						{
-							Time: &timestamp.Timestamp{Seconds: 1544805927, Nanos: 457717000},
-							Value: &tracepb.Span_TimeEvent_Annotation_{
-								Annotation: &tracepb.Span_TimeEvent_Annotation{
-									Attributes: &tracepb.Span_Attributes{
-										AttributeMap: map[string]*tracepb.AttributeValue{
-											"cr": {
-												Value: &tracepb.AttributeValue_StringValue{StringValue: &tracepb.TruncatableString{Value: "service1"}},
-											},
-										},
-									},
-								},
-							},
-						},
-					},
-				},
+				TimeEvents:   nil,
 			},
 		},
 	},
@@ -737,38 +673,7 @@ var ocBatchesFromZipkinV1 = []consumerdata.TraceData{
 						},
 					},
 				},
-				TimeEvents: &tracepb.Span_TimeEvents{
-					TimeEvent: []*tracepb.Span_TimeEvent{
-						{
-							Time: &timestamp.Timestamp{Seconds: 1544805927, Nanos: 454487000},
-							Value: &tracepb.Span_TimeEvent_Annotation_{
-								Annotation: &tracepb.Span_TimeEvent_Annotation{
-									Attributes: &tracepb.Span_Attributes{
-										AttributeMap: map[string]*tracepb.AttributeValue{
-											"sr": {
-												Value: &tracepb.AttributeValue_StringValue{StringValue: &tracepb.TruncatableString{Value: "service2"}},
-											},
-										},
-									},
-								},
-							},
-						},
-						{
-							Time: &timestamp.Timestamp{Seconds: 1544805927, Nanos: 457320000},
-							Value: &tracepb.Span_TimeEvent_Annotation_{
-								Annotation: &tracepb.Span_TimeEvent_Annotation{
-									Attributes: &tracepb.Span_Attributes{
-										AttributeMap: map[string]*tracepb.AttributeValue{
-											"ss": {
-												Value: &tracepb.AttributeValue_StringValue{StringValue: &tracepb.TruncatableString{Value: "service2"}},
-											},
-										},
-									},
-								},
-							},
-						},
-					},
-				},
+				TimeEvents: nil,
 			},
 		},
 	},
@@ -864,4 +769,28 @@ func TestSpanKindTranslation(t *testing.T) {
 			assert.EqualValues(t, test.zipkinV2Kind, zSpanTranslated.Kind)
 		})
 	}
+}
+
+func TestZipkinV1ToOCSpanInvalidTraceId(t *testing.T) {
+	zSpan := &zipkinV1Span{
+		TraceID: "abc",
+		ID:      "0123456789123456",
+		Annotations: []*annotation{
+			{Value: "cr"},
+		},
+	}
+	_, _, err := zipkinV1ToOCSpan(zSpan)
+	assert.EqualError(t, err, "zipkinV1 span traceId: hex traceId span has wrong length (expected 16 or 32)")
+}
+
+func TestZipkinV1ToOCSpanInvalidSpanId(t *testing.T) {
+	zSpan := &zipkinV1Span{
+		TraceID: "1234567890123456",
+		ID:      "abc",
+		Annotations: []*annotation{
+			{Value: "cr"},
+		},
+	}
+	_, _, err := zipkinV1ToOCSpan(zSpan)
+	assert.EqualError(t, err, "zipkinV1 span id: hex Id has wrong length (expected 16)")
 }

@@ -1,4 +1,4 @@
-// Copyright 2019, OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import (
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/consumer/consumerdata"
 	"go.opentelemetry.io/collector/consumer/pdata"
+	"go.opentelemetry.io/collector/internal/data"
 )
 
 type nopExporterOld struct {
@@ -27,15 +28,15 @@ type nopExporterOld struct {
 	retError error
 }
 
-func (ne *nopExporterOld) Start(ctx context.Context, host component.Host) error {
+func (ne *nopExporterOld) Start(context.Context, component.Host) error {
 	return nil
 }
 
-func (ne *nopExporterOld) ConsumeTraceData(_ context.Context, _ consumerdata.TraceData) error {
+func (ne *nopExporterOld) ConsumeTraceData(context.Context, consumerdata.TraceData) error {
 	return ne.retError
 }
 
-func (ne *nopExporterOld) ConsumeMetricsData(_ context.Context, _ consumerdata.MetricsData) error {
+func (ne *nopExporterOld) ConsumeMetricsData(context.Context, consumerdata.MetricsData) error {
 	return ne.retError
 }
 
@@ -47,6 +48,7 @@ func (ne *nopExporterOld) Shutdown(context.Context) error {
 const (
 	nopTraceExporterName   = "nop_trace"
 	nopMetricsExporterName = "nop_metrics"
+	nopLogExporterName     = "nop_log"
 )
 
 // NewNopTraceExporterOld creates an TraceExporter that just drops the received data.
@@ -70,15 +72,19 @@ type nopExporter struct {
 	retError error
 }
 
-func (ne *nopExporter) Start(ctx context.Context, host component.Host) error {
+func (ne *nopExporter) Start(context.Context, component.Host) error {
 	return nil
 }
 
-func (ne *nopExporter) ConsumeTraces(_ context.Context, _ pdata.Traces) error {
+func (ne *nopExporter) ConsumeTraces(context.Context, pdata.Traces) error {
 	return ne.retError
 }
 
-func (ne *nopExporter) ConsumeMetrics(ctx context.Context, md pdata.Metrics) error {
+func (ne *nopExporter) ConsumeMetrics(context.Context, pdata.Metrics) error {
+	return ne.retError
+}
+
+func (ne *nopExporter) ConsumeLogs(context.Context, data.Logs) error {
 	return ne.retError
 }
 
@@ -99,6 +105,14 @@ func NewNopTraceExporter() component.TraceExporter {
 func NewNopMetricsExporter() component.MetricsExporter {
 	ne := &nopExporter{
 		name: nopMetricsExporterName,
+	}
+	return ne
+}
+
+// NewNopLogExporterOld creates an LogExporter that just drops the received data.
+func NewNopLogsExporter() component.LogExporter {
+	ne := &nopExporter{
+		name: nopLogExporterName,
 	}
 	return ne
 }

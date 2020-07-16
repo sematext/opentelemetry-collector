@@ -1,4 +1,4 @@
-// Copyright 2020 OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -139,7 +139,12 @@ func ocSpanToInternal(src *octrace.Span, dest pdata.Span) {
 	dest.SetTraceID(pdata.NewTraceID(src.TraceId))
 	dest.SetSpanID(pdata.NewSpanID(src.SpanId))
 	dest.SetTraceState(ocTraceStateToInternal(src.Tracestate))
-	dest.SetParentSpanID(pdata.NewSpanID(src.ParentSpanId))
+
+	// Empty parentSpanId can be set as a nil value, an zero len slice or an all-zeros slice
+	if hasBytesValue(src.ParentSpanId) {
+		dest.SetParentSpanID(pdata.NewSpanID(src.ParentSpanId))
+	}
+
 	dest.SetName(src.Name.GetValue())
 	dest.SetStartTime(internal.TimestampToUnixNano(src.StartTime))
 	dest.SetEndTime(internal.TimestampToUnixNano(src.EndTime))
@@ -149,6 +154,15 @@ func ocSpanToInternal(src *octrace.Span, dest pdata.Span) {
 	ocEventsToInternal(src.TimeEvents, dest)
 	ocLinksToInternal(src.Links, dest)
 	ocStatusToInternal(src.Status, dest.Status())
+}
+
+func hasBytesValue(s []byte) bool {
+	for _, b := range s {
+		if b != 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func ocStatusToInternal(ocStatus *octrace.Status, dest pdata.SpanStatus) {
@@ -237,6 +251,8 @@ func ocSpanKindToInternal(ocKind octrace.Span_SpanKind, ocAttrs *octrace.Span_At
 						otlpKind = pdata.SpanKindCONSUMER
 					case tracetranslator.OpenTracingSpanKindProducer:
 						otlpKind = pdata.SpanKindPRODUCER
+					case tracetranslator.OpenTracingSpanKindInternal:
+						otlpKind = pdata.SpanKindINTERNAL
 					default:
 						return pdata.SpanKindUNSPECIFIED
 					}

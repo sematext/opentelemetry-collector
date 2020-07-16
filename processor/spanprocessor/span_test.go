@@ -1,4 +1,4 @@
-// Copyright 2019, OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -27,19 +27,21 @@ import (
 	"go.opentelemetry.io/collector/consumer/pdata"
 	"go.opentelemetry.io/collector/exporter/exportertest"
 	"go.opentelemetry.io/collector/internal/data/testdata"
+	"go.opentelemetry.io/collector/internal/processor/filterset"
 	"go.opentelemetry.io/collector/internal/processor/filterspan"
 	"go.opentelemetry.io/collector/translator/conventions"
 )
 
 func TestNewTraceProcessor(t *testing.T) {
-	factory := Factory{}
+	factory := NewFactory()
 	cfg := factory.CreateDefaultConfig()
 	oCfg := cfg.(*Config)
-	tp, err := newSpanProcessor(nil, *oCfg)
+	oCfg.Rename.FromAttributes = []string{"foo"}
+	tp, err := factory.CreateTraceProcessor(context.Background(), component.ProcessorCreateParams{}, nil, cfg)
 	require.Error(t, componenterror.ErrNilNextConsumer, err)
 	require.Nil(t, tp)
 
-	tp, err = newSpanProcessor(exportertest.NewNopTraceExporter(), *oCfg)
+	tp, err = factory.CreateTraceProcessor(context.Background(), component.ProcessorCreateParams{}, exportertest.NewNopTraceExporter(), cfg)
 	require.Nil(t, err)
 	require.NotNil(t, tp)
 }
@@ -145,12 +147,12 @@ func TestSpanProcessor_NilEmptyData(t *testing.T) {
 			output: testdata.GenerateTraceDataOneEmptyOneNilInstrumentationLibrary(),
 		},
 	}
-	factory := Factory{}
+	factory := NewFactory()
 	cfg := factory.CreateDefaultConfig()
 	oCfg := cfg.(*Config)
 	oCfg.Include = &filterspan.MatchProperties{
-		MatchType: "strict",
-		Services:  []string{"service"},
+		Config:   *createMatchConfig(filterset.Strict),
+		Services: []string{"service"},
 	}
 	oCfg.Rename.FromAttributes = []string{"key"}
 
@@ -254,7 +256,7 @@ func TestSpanProcessor_Values(t *testing.T) {
 		},*/
 	}
 
-	factory := Factory{}
+	factory := NewFactory()
 	cfg := factory.CreateDefaultConfig()
 	oCfg := cfg.(*Config)
 	oCfg.Rename.FromAttributes = []string{"key1"}
@@ -330,7 +332,7 @@ func TestSpanProcessor_MissingKeys(t *testing.T) {
 			},
 		},
 	}
-	factory := Factory{}
+	factory := NewFactory()
 	cfg := factory.CreateDefaultConfig()
 	oCfg := cfg.(*Config)
 	oCfg.Rename.FromAttributes = []string{"key1", "key2", "key3", "key4"}
@@ -349,7 +351,7 @@ func TestSpanProcessor_MissingKeys(t *testing.T) {
 // the single key.
 func TestSpanProcessor_Separator(t *testing.T) {
 
-	factory := Factory{}
+	factory := NewFactory()
 	cfg := factory.CreateDefaultConfig()
 	oCfg := cfg.(*Config)
 	oCfg.Rename.FromAttributes = []string{"key1"}
@@ -379,7 +381,7 @@ func TestSpanProcessor_Separator(t *testing.T) {
 // TestSpanProcessor_NoSeparatorMultipleKeys tests naming a span using multiple keys and no separator.
 func TestSpanProcessor_NoSeparatorMultipleKeys(t *testing.T) {
 
-	factory := Factory{}
+	factory := NewFactory()
 	cfg := factory.CreateDefaultConfig()
 	oCfg := cfg.(*Config)
 	oCfg.Rename.FromAttributes = []string{"key1", "key2"}
@@ -410,7 +412,7 @@ func TestSpanProcessor_NoSeparatorMultipleKeys(t *testing.T) {
 // TestSpanProcessor_SeparatorMultipleKeys tests naming a span with multiple keys and a separator.
 func TestSpanProcessor_SeparatorMultipleKeys(t *testing.T) {
 
-	factory := Factory{}
+	factory := NewFactory()
 	cfg := factory.CreateDefaultConfig()
 	oCfg := cfg.(*Config)
 	oCfg.Rename.FromAttributes = []string{"key1", "key2", "key3", "key4"}
@@ -446,7 +448,7 @@ func TestSpanProcessor_SeparatorMultipleKeys(t *testing.T) {
 // TestSpanProcessor_NilName tests naming a span when the input span had no name.
 func TestSpanProcessor_NilName(t *testing.T) {
 
-	factory := Factory{}
+	factory := NewFactory()
 	cfg := factory.CreateDefaultConfig()
 	oCfg := cfg.(*Config)
 	oCfg.Rename.FromAttributes = []string{"key1"}
@@ -542,7 +544,7 @@ func TestSpanProcessor_ToAttributes(t *testing.T) {
 		},
 	}
 
-	factory := Factory{}
+	factory := NewFactory()
 	cfg := factory.CreateDefaultConfig()
 	oCfg := cfg.(*Config)
 	oCfg.Rename.ToAttributes = &ToAttributes{}
@@ -603,16 +605,16 @@ func TestSpanProcessor_skipSpan(t *testing.T) {
 		},
 	}
 
-	factory := Factory{}
+	factory := NewFactory()
 	cfg := factory.CreateDefaultConfig()
 	oCfg := cfg.(*Config)
 	oCfg.Include = &filterspan.MatchProperties{
-		MatchType: filterspan.MatchTypeRegexp,
+		Config:    *createMatchConfig(filterset.Regexp),
 		Services:  []string{`^banks$`},
 		SpanNames: []string{"/"},
 	}
 	oCfg.Exclude = &filterspan.MatchProperties{
-		MatchType: filterspan.MatchTypeStrict,
+		Config:    *createMatchConfig(filterset.Strict),
 		SpanNames: []string{`donot/change`},
 	}
 	oCfg.Rename.ToAttributes = &ToAttributes{

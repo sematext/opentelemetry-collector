@@ -1,4 +1,4 @@
-// Copyright 2020 OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -48,7 +48,7 @@ func TestConfig(t *testing.T) {
 			assert.True(t, ok)
 			assert.Equal(t, expCfg, actualCfg)
 
-			fs, err := CreateRegexpFilterSet([]string{}, &actualCfg)
+			fs, err := NewFilterSet([]string{}, &actualCfg)
 			assert.NoError(t, err)
 			assert.NotNil(t, fs)
 		})

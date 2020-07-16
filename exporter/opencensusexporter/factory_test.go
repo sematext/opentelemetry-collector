@@ -1,4 +1,4 @@
-// Copyright 2019, OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -26,9 +26,10 @@ import (
 	"go.opentelemetry.io/collector/component/componenttest"
 	"go.opentelemetry.io/collector/config/configcheck"
 	"go.opentelemetry.io/collector/config/configgrpc"
+	"go.opentelemetry.io/collector/config/configtls"
 	"go.opentelemetry.io/collector/exporter/exportertest"
 	"go.opentelemetry.io/collector/receiver/opencensusreceiver"
-	"go.opentelemetry.io/collector/testutils"
+	"go.opentelemetry.io/collector/testutil"
 )
 
 func TestCreateDefaultConfig(t *testing.T) {
@@ -41,7 +42,7 @@ func TestCreateDefaultConfig(t *testing.T) {
 func TestCreateMetricsExporter(t *testing.T) {
 	factory := Factory{}
 	cfg := factory.CreateDefaultConfig().(*Config)
-	cfg.GRPCSettings.Endpoint = testutils.GetAvailableLocalAddress(t)
+	cfg.GRPCClientSettings.Endpoint = testutil.GetAvailableLocalAddress(t)
 
 	oexp, err := factory.CreateMetricsExporter(zap.NewNop(), cfg)
 	require.Nil(t, err)
@@ -56,7 +57,7 @@ func TestCreateTraceExporter(t *testing.T) {
 	rcvFactory := &opencensusreceiver.Factory{}
 	require.NotNil(t, rcvFactory)
 	rcvCfg := rcvFactory.CreateDefaultConfig().(*opencensusreceiver.Config)
-	rcvCfg.Endpoint = testutils.GetAvailableLocalAddress(t)
+	rcvCfg.NetAddr.Endpoint = testutil.GetAvailableLocalAddress(t)
 
 	rcv, err := rcvFactory.CreateTraceReceiver(
 		context.Background(),
@@ -76,7 +77,7 @@ func TestCreateTraceExporter(t *testing.T) {
 		{
 			name: "NoEndpoint",
 			config: Config{
-				GRPCSettings: configgrpc.GRPCSettings{
+				GRPCClientSettings: configgrpc.GRPCClientSettings{
 					Endpoint: "",
 				},
 			},
@@ -85,10 +86,10 @@ func TestCreateTraceExporter(t *testing.T) {
 		{
 			name: "UseSecure",
 			config: Config{
-				GRPCSettings: configgrpc.GRPCSettings{
-					Endpoint: rcvCfg.Endpoint,
-					TLSConfig: configgrpc.TLSConfig{
-						UseSecure: true,
+				GRPCClientSettings: configgrpc.GRPCClientSettings{
+					Endpoint: rcvCfg.NetAddr.Endpoint,
+					TLSSetting: configtls.TLSClientSetting{
+						Insecure: false,
 					},
 				},
 			},
@@ -96,18 +97,18 @@ func TestCreateTraceExporter(t *testing.T) {
 		{
 			name: "ReconnectionDelay",
 			config: Config{
-				GRPCSettings: configgrpc.GRPCSettings{
-					Endpoint: rcvCfg.Endpoint,
+				GRPCClientSettings: configgrpc.GRPCClientSettings{
+					Endpoint: rcvCfg.NetAddr.Endpoint,
 				},
 				ReconnectionDelay: 5 * time.Second,
 			},
 		},
 		{
-			name: "KeepaliveParameters",
+			name: "Keepalive",
 			config: Config{
-				GRPCSettings: configgrpc.GRPCSettings{
-					Endpoint: rcvCfg.Endpoint,
-					KeepaliveParameters: &configgrpc.KeepaliveConfig{
+				GRPCClientSettings: configgrpc.GRPCClientSettings{
+					Endpoint: rcvCfg.NetAddr.Endpoint,
+					Keepalive: &configgrpc.KeepaliveClientConfig{
 						Time:                30 * time.Second,
 						Timeout:             25 * time.Second,
 						PermitWithoutStream: true,
@@ -118,8 +119,8 @@ func TestCreateTraceExporter(t *testing.T) {
 		{
 			name: "Compression",
 			config: Config{
-				GRPCSettings: configgrpc.GRPCSettings{
-					Endpoint:    rcvCfg.Endpoint,
+				GRPCClientSettings: configgrpc.GRPCClientSettings{
+					Endpoint:    rcvCfg.NetAddr.Endpoint,
 					Compression: configgrpc.CompressionGzip,
 				},
 			},
@@ -127,8 +128,8 @@ func TestCreateTraceExporter(t *testing.T) {
 		{
 			name: "Headers",
 			config: Config{
-				GRPCSettings: configgrpc.GRPCSettings{
-					Endpoint: rcvCfg.Endpoint,
+				GRPCClientSettings: configgrpc.GRPCClientSettings{
+					Endpoint: rcvCfg.NetAddr.Endpoint,
 					Headers: map[string]string{
 						"hdr1": "val1",
 						"hdr2": "val2",
@@ -139,8 +140,8 @@ func TestCreateTraceExporter(t *testing.T) {
 		{
 			name: "NumWorkers",
 			config: Config{
-				GRPCSettings: configgrpc.GRPCSettings{
-					Endpoint: rcvCfg.Endpoint,
+				GRPCClientSettings: configgrpc.GRPCClientSettings{
+					Endpoint: rcvCfg.NetAddr.Endpoint,
 				},
 				NumWorkers: 3,
 			},
@@ -148,8 +149,8 @@ func TestCreateTraceExporter(t *testing.T) {
 		{
 			name: "CompressionError",
 			config: Config{
-				GRPCSettings: configgrpc.GRPCSettings{
-					Endpoint:    rcvCfg.Endpoint,
+				GRPCClientSettings: configgrpc.GRPCClientSettings{
+					Endpoint:    rcvCfg.NetAddr.Endpoint,
 					Compression: "unknown compression",
 				},
 			},
@@ -158,10 +159,12 @@ func TestCreateTraceExporter(t *testing.T) {
 		{
 			name: "CaCert",
 			config: Config{
-				GRPCSettings: configgrpc.GRPCSettings{
-					Endpoint: rcvCfg.Endpoint,
-					TLSConfig: configgrpc.TLSConfig{
-						CaCert: "testdata/test_cert.pem",
+				GRPCClientSettings: configgrpc.GRPCClientSettings{
+					Endpoint: rcvCfg.NetAddr.Endpoint,
+					TLSSetting: configtls.TLSClientSetting{
+						TLSSetting: configtls.TLSSetting{
+							CAFile: "testdata/test_cert.pem",
+						},
 					},
 				},
 			},
@@ -169,10 +172,12 @@ func TestCreateTraceExporter(t *testing.T) {
 		{
 			name: "CertPemFileError",
 			config: Config{
-				GRPCSettings: configgrpc.GRPCSettings{
-					Endpoint: rcvCfg.Endpoint,
-					TLSConfig: configgrpc.TLSConfig{
-						CaCert: "nosuchfile",
+				GRPCClientSettings: configgrpc.GRPCClientSettings{
+					Endpoint: rcvCfg.NetAddr.Endpoint,
+					TLSSetting: configtls.TLSClientSetting{
+						TLSSetting: configtls.TLSSetting{
+							CAFile: "nosuchfile",
+						},
 					},
 				},
 			},

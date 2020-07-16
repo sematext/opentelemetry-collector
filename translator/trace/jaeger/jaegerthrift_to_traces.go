@@ -1,4 +1,4 @@
-// Copyright 2020, OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -116,6 +116,7 @@ func jThriftSpanToInternal(span *jaeger.Span, dest pdata.Span) {
 	setInternalSpanStatus(attrs, dest.Status())
 	if spanKindAttr, ok := attrs.Get(tracetranslator.TagSpanKind); ok {
 		dest.SetKind(jSpanKindToInternal(spanKindAttr.StringVal()))
+		attrs.Delete(tracetranslator.TagSpanKind)
 	}
 
 	// drop the attributes slice if all of them were replaced during translation
@@ -165,8 +166,9 @@ func jThriftLogsToSpanEvents(logs []*jaeger.Log, dest pdata.SpanEventSlice) {
 		attrs := event.Attributes()
 		attrs.InitEmptyWithCapacity(len(log.Fields))
 		jThriftTagsToInternalAttributes(log.Fields, attrs)
-		if name, ok := attrs.Get("message"); ok {
+		if name, ok := attrs.Get(tracetranslator.TagMessage); ok {
 			event.SetName(name.StringVal())
+			attrs.Delete(tracetranslator.TagMessage)
 		}
 	}
 }

@@ -1,4 +1,4 @@
-// Copyright 2019, OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,8 +16,9 @@ package jaegerreceiver
 
 import (
 	"go.opentelemetry.io/collector/config/configgrpc"
+	"go.opentelemetry.io/collector/config/confighttp"
 	"go.opentelemetry.io/collector/config/configmodels"
-	"go.opentelemetry.io/collector/receiver"
+	"go.opentelemetry.io/collector/config/configprotocol"
 )
 
 // The config field name to load the protocol map from
@@ -25,35 +26,21 @@ const protocolsFieldName = "protocols"
 
 // RemoteSamplingConfig defines config key for remote sampling fetch endpoint
 type RemoteSamplingConfig struct {
-	HostEndpoint            string `mapstructure:"host_endpoint"`
-	StrategyFile            string `mapstructure:"strategy_file"`
-	configgrpc.GRPCSettings `mapstructure:",squash"`
+	HostEndpoint                  string `mapstructure:"host_endpoint"`
+	StrategyFile                  string `mapstructure:"strategy_file"`
+	configgrpc.GRPCClientSettings `mapstructure:",squash"`
+}
+
+type Protocols struct {
+	GRPC          *configgrpc.GRPCServerSettings         `mapstructure:"grpc"`
+	ThriftHTTP    *confighttp.HTTPServerSettings         `mapstructure:"thrift_http"`
+	ThriftBinary  *configprotocol.ProtocolServerSettings `mapstructure:"thrift_binary"`
+	ThriftCompact *configprotocol.ProtocolServerSettings `mapstructure:"thrift_compact"`
 }
 
 // Config defines configuration for Jaeger receiver.
 type Config struct {
-	TypeVal        configmodels.Type                           `mapstructure:"-"`
-	NameVal        string                                      `mapstructure:"-"`
-	Protocols      map[string]*receiver.SecureReceiverSettings `mapstructure:"protocols"`
-	RemoteSampling *RemoteSamplingConfig                       `mapstructure:"remote_sampling"`
-}
-
-// Name gets the receiver name.
-func (rs *Config) Name() string {
-	return rs.NameVal
-}
-
-// SetName sets the receiver name.
-func (rs *Config) SetName(name string) {
-	rs.NameVal = name
-}
-
-// Type sets the receiver type.
-func (rs *Config) Type() configmodels.Type {
-	return rs.TypeVal
-}
-
-// SetType sets the receiver type.
-func (rs *Config) SetType(typeStr configmodels.Type) {
-	rs.TypeVal = typeStr
+	configmodels.ReceiverSettings `mapstructure:",squash"` // squash ensures fields are correctly decoded in embedded struct
+	Protocols                     `mapstructure:"protocols"`
+	RemoteSampling                *RemoteSamplingConfig `mapstructure:"remote_sampling"`
 }

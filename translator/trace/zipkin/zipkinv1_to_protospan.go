@@ -1,4 +1,4 @@
-// Copyright 2019, OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"time"
 
 	commonpb "github.com/census-instrumentation/opencensus-proto/gen-go/agent/common/v1"
 	tracepb "github.com/census-instrumentation/opencensus-proto/gen-go/trace/v1"
@@ -27,6 +28,7 @@ import (
 	"github.com/pkg/errors"
 
 	"go.opentelemetry.io/collector/consumer/consumerdata"
+	"go.opentelemetry.io/collector/internal"
 	tracetranslator "go.opentelemetry.io/collector/translator/trace"
 )
 
@@ -175,6 +177,7 @@ func zipkinV1ToOCSpan(zSpan *zipkinV1Span) (*tracepb.Span, *annotationParseResul
 	}
 
 	setSpanKind(ocSpan, parsedAnnotations.Kind, parsedAnnotations.ExtendedKind)
+	setTimestampsIfUnset(ocSpan)
 
 	return ocSpan, parsedAnnotations, nil
 }
@@ -212,15 +215,8 @@ func zipkinV1BinAnnotationsToOCAttributes(binAnnotations []*binaryAnnotation) (a
 		if binAnnotation.Endpoint != nil && binAnnotation.Endpoint.ServiceName != "" {
 			fallbackServiceName = binAnnotation.Endpoint.ServiceName
 		}
-		pbAttrib := &tracepb.AttributeValue{}
-		if iValue, err := strconv.ParseInt(binAnnotation.Value, 10, 64); err == nil {
-			pbAttrib.Value = &tracepb.AttributeValue_IntValue{IntValue: iValue}
-		} else if bValue, err := strconv.ParseBool(binAnnotation.Value); err == nil {
-			pbAttrib.Value = &tracepb.AttributeValue_BoolValue{BoolValue: bValue}
-		} else {
-			// For now all else go to string
-			pbAttrib.Value = &tracepb.AttributeValue_StringValue{StringValue: &tracepb.TruncatableString{Value: binAnnotation.Value}}
-		}
+
+		pbAttrib := parseAnnotationValue(binAnnotation.Value)
 
 		key := binAnnotation.Key
 
@@ -252,6 +248,21 @@ func zipkinV1BinAnnotationsToOCAttributes(binAnnotations []*binaryAnnotation) (a
 	}
 
 	return attributes, status, fallbackServiceName
+}
+
+func parseAnnotationValue(value string) *tracepb.AttributeValue {
+	pbAttrib := &tracepb.AttributeValue{}
+
+	if iValue, err := strconv.ParseInt(value, 10, 64); err == nil {
+		pbAttrib.Value = &tracepb.AttributeValue_IntValue{IntValue: iValue}
+	} else if bValue, err := strconv.ParseBool(value); err == nil {
+		pbAttrib.Value = &tracepb.AttributeValue_BoolValue{BoolValue: bValue}
+	} else {
+		// For now all else go to string
+		pbAttrib.Value = &tracepb.AttributeValue_StringValue{StringValue: &tracepb.TruncatableString{Value: value}}
+	}
+
+	return pbAttrib
 }
 
 // annotationParseResult stores the results of examining the original annotations,
@@ -340,23 +351,18 @@ func parseZipkinV1Annotations(annotations []*annotation) *annotationParseResult 
 			res.LateAnnotationTime = ts
 		}
 
+		if annotationHasSpanKind {
+			// If this annotation is for the send/receive timestamps, no need to create the annotation
+			continue
+		}
+
 		timeEvent := &tracepb.Span_TimeEvent{
 			Time: ts,
 			// More economically we could use a tracepb.Span_TimeEvent_Message, however, it will mean the loss of some information.
 			// Using the more expensive annotation until/if something cheaper is needed.
 			Value: &tracepb.Span_TimeEvent_Annotation_{
 				Annotation: &tracepb.Span_TimeEvent_Annotation{
-					Attributes: &tracepb.Span_Attributes{
-						AttributeMap: map[string]*tracepb.AttributeValue{
-							currAnnotation.Value: {
-								Value: &tracepb.AttributeValue_StringValue{
-									StringValue: &tracepb.TruncatableString{
-										Value: endpointName,
-									},
-								},
-							},
-						},
-					},
+					Description: &tracepb.TruncatableString{Value: currAnnotation.Value},
 				},
 			},
 		}
@@ -475,4 +481,26 @@ func (ep *endpoint) createAttributeMap() map[string]string {
 		attributeMap["port"] = strconv.Itoa(int(ep.Port))
 	}
 	return attributeMap
+}
+
+func setTimestampsIfUnset(span *tracepb.Span) {
+	// zipkin allows timestamp to be unset, but opentelemetry-collector expects it to have a value.
+	// If this is unset, the conversion from open census to the internal trace format breaks
+	// what should be an identity transformation oc -> internal -> oc
+	if span.StartTime == nil {
+		now := internal.TimeToTimestamp(time.Now())
+		span.StartTime = now
+		span.EndTime = now
+
+		if span.Attributes == nil {
+			span.Attributes = &tracepb.Span_Attributes{}
+		}
+		if span.Attributes.AttributeMap == nil {
+			span.Attributes.AttributeMap = make(map[string]*tracepb.AttributeValue, 1)
+		}
+		span.Attributes.AttributeMap[StartTimeAbsent] = &tracepb.AttributeValue{
+			Value: &tracepb.AttributeValue_BoolValue{
+				BoolValue: true,
+			}}
+	}
 }

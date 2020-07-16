@@ -1,4 +1,4 @@
-// Copyright 2019 OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -118,6 +118,10 @@ func TestSpanKindToOC(t *testing.T) {
 			kind:   pdata.SpanKindUNSPECIFIED,
 			ocKind: octrace.Span_SPAN_KIND_UNSPECIFIED,
 		},
+		{
+			kind:   pdata.SpanKindINTERNAL,
+			ocKind: octrace.Span_SPAN_KIND_UNSPECIFIED,
+		},
 	}
 
 	for _, test := range tests {
@@ -149,6 +153,16 @@ func TestSpanKindToOCAttribute(t *testing.T) {
 				Value: &octrace.AttributeValue_StringValue{
 					StringValue: &octrace.TruncatableString{
 						Value: string(tracetranslator.OpenTracingSpanKindProducer),
+					},
+				},
+			},
+		},
+		{
+			kind: pdata.SpanKindINTERNAL,
+			ocAttribute: &octrace.AttributeValue{
+				Value: &octrace.AttributeValue_StringValue{
+					StringValue: &octrace.TruncatableString{
+						Value: string(tracetranslator.OpenTracingSpanKindInternal),
 					},
 				},
 			},

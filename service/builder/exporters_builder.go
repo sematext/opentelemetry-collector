@@ -1,4 +1,4 @@
-// Copyright 2019, OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -232,11 +232,7 @@ func (eb *ExportersBuilder) buildExporter(
 
 	inputDataTypes := exportersInputDataTypes[config]
 	if inputDataTypes == nil {
-		// TODO  https://go.opentelemetry.io/collector/issues/294
-		// Move this validation to config/config.go:validateConfig
-		// No data types where requested for this exporter. This can only happen
-		// if there are no pipelines associated with the exporter.
-		logger.Warn("Exporter is not associated with any pipeline and will not export data.")
+		logger.Info("Ignoring exporter as it is not used by any pipeline")
 		return exporter, nil
 	}
 

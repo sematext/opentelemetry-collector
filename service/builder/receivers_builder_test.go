@@ -1,4 +1,4 @@
-// Copyright 2019, OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -96,7 +96,7 @@ func testReceivers(
 	factories, err := config.ExampleComponents()
 	assert.NoError(t, err)
 
-	attrFactory := &attributesprocessor.Factory{}
+	attrFactory := attributesprocessor.NewFactory()
 	factories.Processors[attrFactory.Type()] = attrFactory
 	cfg, err := config.LoadConfigFile(t, "testdata/pipelines_builder.yaml", factories)
 	require.Nil(t, err)
@@ -268,7 +268,7 @@ func TestReceiversBuilder_DataTypeError(t *testing.T) {
 	factories, err := config.ExampleComponents()
 	assert.NoError(t, err)
 
-	attrFactory := &attributesprocessor.Factory{}
+	attrFactory := attributesprocessor.NewFactory()
 	factories.Processors[attrFactory.Type()] = attrFactory
 	cfg, err := config.LoadConfigFile(t, "testdata/pipelines_builder.yaml", factories)
 	assert.NoError(t, err)
@@ -369,7 +369,7 @@ func TestReceiversBuilder_Unused(t *testing.T) {
 	factories, err := config.ExampleComponents()
 	assert.NoError(t, err)
 
-	attrFactory := &attributesprocessor.Factory{}
+	attrFactory := attributesprocessor.NewFactory()
 	factories.Processors[attrFactory.Type()] = attrFactory
 
 	zpkFactory := &zipkinreceiver.Factory{}
@@ -440,11 +440,7 @@ func (b *badReceiverFactory) CreateTraceReceiver(
 	return nil, nil
 }
 
-func (b *badReceiverFactory) CreateMetricsReceiver(
-	_ *zap.Logger,
-	_ configmodels.Receiver,
-	_ consumer.MetricsConsumerOld,
-) (component.MetricsReceiver, error) {
+func (b *badReceiverFactory) CreateMetricsReceiver(ctx context.Context, logger *zap.Logger, cfg configmodels.Receiver, nextConsumer consumer.MetricsConsumerOld) (component.MetricsReceiver, error) {
 	return nil, nil
 }
 

@@ -1,4 +1,4 @@
-// Copyright 2020 OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -38,8 +38,8 @@ func TestMetricsDataToOC(t *testing.T) {
 	attrs.Upsert(conventions.AttributeHostHostname, pdata.NewAttributeValueString("host1"))
 	attrs.Upsert(conventions.OCAttributeProcessID, pdata.NewAttributeValueInt(123))
 	attrs.Upsert(conventions.OCAttributeProcessStartTime, pdata.NewAttributeValueString("2020-02-11T20:26:00Z"))
-	attrs.Upsert(conventions.AttributeLibraryLanguage, pdata.NewAttributeValueString("CPP"))
-	attrs.Upsert(conventions.AttributeLibraryVersion, pdata.NewAttributeValueString("v2.0.1"))
+	attrs.Upsert(conventions.AttributeTelemetrySDKLanguage, pdata.NewAttributeValueString("CPP"))
+	attrs.Upsert(conventions.AttributeTelemetrySDKVersion, pdata.NewAttributeValueString("v2.0.1"))
 	attrs.Upsert(conventions.OCAttributeExporterVersion, pdata.NewAttributeValueString("v1.2.0"))
 
 	tests := []struct {
@@ -134,14 +134,6 @@ func TestMetricsDataToOC(t *testing.T) {
 			internal: testdata.GenerateMetricDataOneMetricNoLabels(),
 			oc: []consumerdata.MetricsData{
 				generateOCTestDataNoLabels(),
-			},
-		},
-
-		{
-			name:     "one-metric-labels-in-descriptor",
-			internal: testdata.GenerateMetricDataOneMetricLabelsInDescriptor(),
-			oc: []consumerdata.MetricsData{
-				generateOCTestDataMetricsInDescriptor(),
 			},
 		},
 

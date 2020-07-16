@@ -1,4 +1,4 @@
-// Copyright 2020, OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,82 +16,138 @@ package otlpreceiver
 
 import (
 	"context"
+	"fmt"
+
+	"github.com/spf13/viper"
 
 	"go.opentelemetry.io/collector/component"
+	"go.opentelemetry.io/collector/config/configgrpc"
+	"go.opentelemetry.io/collector/config/confighttp"
 	"go.opentelemetry.io/collector/config/configmodels"
+	"go.opentelemetry.io/collector/config/confignet"
 	"go.opentelemetry.io/collector/consumer"
-	"go.opentelemetry.io/collector/receiver"
+	"go.opentelemetry.io/collector/receiver/receiverhelper"
 )
 
 const (
 	// The value of "type" key in configuration.
 	typeStr = "otlp"
+
+	// Protocol values.
+	protoGRPC          = "grpc"
+	protoHTTP          = "http"
+	protocolsFieldName = "protocols"
 )
 
-// Factory is the Factory for receiver.
-type Factory struct {
+func NewFactory() component.ReceiverFactory {
+	return receiverhelper.NewFactory(
+		typeStr,
+		createDefaultConfig,
+		receiverhelper.WithTraces(createTraceReceiver),
+		receiverhelper.WithMetrics(createMetricsReceiver),
+		receiverhelper.WithCustomUnmarshaler(customUnmarshaler))
 }
 
-// Type gets the type of the Receiver config created by this Factory.
-func (f *Factory) Type() configmodels.Type {
-	return typeStr
-}
-
-// CustomUnmarshaler returns nil because we don't need custom unmarshaling for this config.
-func (f *Factory) CustomUnmarshaler() component.CustomUnmarshaler {
-	return nil
-}
-
-// CreateDefaultConfig creates the default configuration for receiver.
-func (f *Factory) CreateDefaultConfig() configmodels.Receiver {
+// createDefaultConfig creates the default configuration for receiver.
+func createDefaultConfig() configmodels.Receiver {
 	return &Config{
-		SecureReceiverSettings: receiver.SecureReceiverSettings{
-			ReceiverSettings: configmodels.ReceiverSettings{
-				TypeVal:  typeStr,
-				NameVal:  typeStr,
-				Endpoint: "localhost:55680",
+		ReceiverSettings: configmodels.ReceiverSettings{
+			TypeVal: typeStr,
+			NameVal: typeStr,
+		},
+		Protocols: Protocols{
+			GRPC: &configgrpc.GRPCServerSettings{
+				NetAddr: confignet.NetAddr{
+					Endpoint:  "0.0.0.0:55680",
+					Transport: "tcp",
+				},
+				// We almost write 0 bytes, so no need to tune WriteBufferSize.
+				ReadBufferSize: 512 * 1024,
+			},
+			HTTP: &confighttp.HTTPServerSettings{
+				Endpoint: "0.0.0.0:55681",
 			},
 		},
-		Transport: "tcp",
 	}
 }
 
+// customUnmarshaler is used to add defaults for named but empty protocols
+func customUnmarshaler(componentViperSection *viper.Viper, intoCfg interface{}) error {
+	if componentViperSection == nil || len(componentViperSection.AllKeys()) == 0 {
+		return fmt.Errorf("empty config for OTLP receiver")
+	}
+	// first load the config normally
+	err := componentViperSection.UnmarshalExact(intoCfg)
+	if err != nil {
+		return err
+	}
+
+	receiverCfg := intoCfg.(*Config)
+	// next manually search for protocols in viper, if a protocol is not present it means it is disable.
+	protocols := componentViperSection.GetStringMap(protocolsFieldName)
+
+	// UnmarshalExact will ignore empty entries like a protocol with no values, so if a typo happened
+	// in the protocol that is intended to be enabled will not be enabled. So check if the protocols
+	// include only known protocols.
+	knownProtocols := 0
+	if _, ok := protocols[protoGRPC]; !ok {
+		receiverCfg.GRPC = nil
+	} else {
+		knownProtocols++
+	}
+
+	if _, ok := protocols[protoHTTP]; !ok {
+		receiverCfg.HTTP = nil
+	} else {
+		knownProtocols++
+	}
+
+	if len(protocols) != knownProtocols {
+		return fmt.Errorf("unknown protocols in the OTLP receiver")
+	}
+
+	if receiverCfg.GRPC == nil && receiverCfg.HTTP == nil {
+		return fmt.Errorf("must specify at least one protocol when using the OTLP receiver")
+	}
+
+	return nil
+}
+
 // CreateTraceReceiver creates a  trace receiver based on provided config.
-func (f *Factory) CreateTraceReceiver(
-	_ context.Context,
+func createTraceReceiver(
+	ctx context.Context,
 	_ component.ReceiverCreateParams,
 	cfg configmodels.Receiver,
 	nextConsumer consumer.TraceConsumer,
 ) (component.TraceReceiver, error) {
-	r, err := f.createReceiver(cfg)
+	r, err := createReceiver(cfg)
 	if err != nil {
 		return nil, err
 	}
-
-	r.traceConsumer = nextConsumer
-
+	if err = r.registerTraceConsumer(ctx, nextConsumer); err != nil {
+		return nil, err
+	}
 	return r, nil
 }
 
 // CreateMetricsReceiver creates a metrics receiver based on provided config.
-func (f *Factory) CreateMetricsReceiver(
-	_ context.Context,
+func createMetricsReceiver(
+	ctx context.Context,
 	_ component.ReceiverCreateParams,
 	cfg configmodels.Receiver,
 	consumer consumer.MetricsConsumer,
 ) (component.MetricsReceiver, error) {
-
-	r, err := f.createReceiver(cfg)
+	r, err := createReceiver(cfg)
 	if err != nil {
 		return nil, err
 	}
-
-	r.metricsConsumer = consumer
-
+	if err = r.registerMetricsConsumer(ctx, consumer); err != nil {
+		return nil, err
+	}
 	return r, nil
 }
 
-func (f *Factory) createReceiver(cfg configmodels.Receiver) (*Receiver, error) {
+func createReceiver(cfg configmodels.Receiver) (*Receiver, error) {
 	rCfg := cfg.(*Config)
 
 	// There must be one receiver for both metrics and traces. We maintain a map of
@@ -100,15 +156,9 @@ func (f *Factory) createReceiver(cfg configmodels.Receiver) (*Receiver, error) {
 	// Check to see if there is already a receiver for this config.
 	receiver, ok := receivers[rCfg]
 	if !ok {
-		// Build the configuration options.
-		opts, err := rCfg.buildOptions()
-		if err != nil {
-			return nil, err
-		}
-
+		var err error
 		// We don't have a receiver, so create one.
-		receiver, err = New(
-			rCfg.Name(), rCfg.Transport, rCfg.Endpoint, nil, nil, opts...)
+		receiver, err = New(rCfg)
 		if err != nil {
 			return nil, err
 		}

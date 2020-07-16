@@ -1,4 +1,4 @@
-// Copyright 2019, OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -31,6 +31,7 @@ import (
 	"go.opentelemetry.io/collector/extension/zpagesextension"
 	"go.opentelemetry.io/collector/processor/attributesprocessor"
 	"go.opentelemetry.io/collector/processor/batchprocessor"
+	"go.opentelemetry.io/collector/processor/filterprocessor"
 	"go.opentelemetry.io/collector/processor/memorylimiter"
 	"go.opentelemetry.io/collector/processor/queuedprocessor"
 	"go.opentelemetry.io/collector/processor/resourceprocessor"
@@ -42,7 +43,6 @@ import (
 	"go.opentelemetry.io/collector/receiver/opencensusreceiver"
 	"go.opentelemetry.io/collector/receiver/otlpreceiver"
 	"go.opentelemetry.io/collector/receiver/prometheusreceiver"
-	"go.opentelemetry.io/collector/receiver/vmmetricsreceiver"
 	"go.opentelemetry.io/collector/receiver/zipkinreceiver"
 )
 
@@ -64,12 +64,11 @@ func Components() (
 	}
 
 	receivers, err := component.MakeReceiverFactoryMap(
-		&jaegerreceiver.Factory{},
+		jaegerreceiver.NewFactory(),
 		&zipkinreceiver.Factory{},
 		&prometheusreceiver.Factory{},
 		&opencensusreceiver.Factory{},
-		&otlpreceiver.Factory{},
-		&vmmetricsreceiver.Factory{},
+		otlpreceiver.NewFactory(),
 		hostmetricsreceiver.NewFactory(),
 	)
 	if err != nil {
@@ -90,14 +89,15 @@ func Components() (
 	}
 
 	processors, err := component.MakeProcessorFactoryMap(
-		&attributesprocessor.Factory{},
-		&resourceprocessor.Factory{},
-		&queuedprocessor.Factory{},
-		&batchprocessor.Factory{},
-		&memorylimiter.Factory{},
+		attributesprocessor.NewFactory(),
+		resourceprocessor.NewFactory(),
+		queuedprocessor.NewFactory(),
+		batchprocessor.NewFactory(),
+		memorylimiter.NewFactory(),
 		&tailsamplingprocessor.Factory{},
 		&probabilisticsamplerprocessor.Factory{},
-		&spanprocessor.Factory{},
+		spanprocessor.NewFactory(),
+		filterprocessor.NewFactory(),
 	)
 	if err != nil {
 		errs = append(errs, err)

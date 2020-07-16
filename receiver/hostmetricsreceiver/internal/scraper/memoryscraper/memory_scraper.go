@@ -1,4 +1,4 @@
-// Copyright 2020, OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -19,7 +19,6 @@ import (
 	"time"
 
 	"github.com/shirou/gopsutil/mem"
-	"go.opencensus.io/trace"
 
 	"go.opentelemetry.io/collector/consumer/pdata"
 )
@@ -27,11 +26,14 @@ import (
 // scraper for Memory Metrics
 type scraper struct {
 	config *Config
+
+	// for mocking gopsutil mem.VirtualMemory
+	virtualMemory func() (*mem.VirtualMemoryStat, error)
 }
 
 // newMemoryScraper creates a Memory Scraper
 func newMemoryScraper(_ context.Context, cfg *Config) *scraper {
-	return &scraper{config: cfg}
+	return &scraper{config: cfg, virtualMemory: mem.VirtualMemory}
 }
 
 // Initialize
@@ -45,31 +47,28 @@ func (s *scraper) Close(_ context.Context) error {
 }
 
 // ScrapeMetrics
-func (s *scraper) ScrapeMetrics(ctx context.Context) (pdata.MetricSlice, error) {
-	_, span := trace.StartSpan(ctx, "memoryscraper.ScrapeMetrics")
-	defer span.End()
-
+func (s *scraper) ScrapeMetrics(_ context.Context) (pdata.MetricSlice, error) {
 	metrics := pdata.NewMetricSlice()
 
-	memInfo, err := mem.VirtualMemory()
+	memInfo, err := s.virtualMemory()
 	if err != nil {
 		return metrics, err
 	}
 
 	metrics.Resize(1)
-	initializeMetricMemoryUsed(metrics.At(0), memInfo)
+	initializeMemoryUsageMetric(metrics.At(0), memInfo)
 	return metrics, nil
 }
 
-func initializeMetricMemoryUsed(metric pdata.Metric, memInfo *mem.VirtualMemoryStat) {
-	metricMemoryUsedDescriptor.CopyTo(metric.MetricDescriptor())
+func initializeMemoryUsageMetric(metric pdata.Metric, memInfo *mem.VirtualMemoryStat) {
+	memoryUsageDescriptor.CopyTo(metric.MetricDescriptor())
 
 	idps := metric.Int64DataPoints()
 	idps.Resize(memStatesLen)
-	appendMemoryUsedStates(idps, memInfo)
+	appendMemoryUsageStateDataPoints(idps, memInfo)
 }
 
-func initializeMemoryUsedDataPoint(dataPoint pdata.Int64DataPoint, stateLabel string, value int64) {
+func initializeMemoryUsageDataPoint(dataPoint pdata.Int64DataPoint, stateLabel string, value int64) {
 	labelsMap := dataPoint.LabelsMap()
 	labelsMap.Insert(stateLabelName, stateLabel)
 	dataPoint.SetTimestamp(pdata.TimestampUnixNano(uint64(time.Now().UnixNano())))

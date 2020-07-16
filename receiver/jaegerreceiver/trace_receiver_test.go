@@ -1,4 +1,4 @@
-// Copyright 2019, OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -34,7 +34,6 @@ import (
 	staticStrategyStore "github.com/jaegertracing/jaeger/plugin/sampling/strategystore/static"
 	"github.com/jaegertracing/jaeger/proto-gen/api_v2"
 	tJaeger "github.com/jaegertracing/jaeger/thrift-gen/jaeger"
-	otlptrace "github.com/open-telemetry/opentelemetry-proto/gen/go/trace/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opencensus.io/trace"
@@ -46,11 +45,12 @@ import (
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/component/componenttest"
 	"go.opentelemetry.io/collector/config/configgrpc"
-	"go.opentelemetry.io/collector/config/configmodels"
+	"go.opentelemetry.io/collector/config/confighttp"
+	"go.opentelemetry.io/collector/config/configtls"
 	"go.opentelemetry.io/collector/consumer/pdata"
 	"go.opentelemetry.io/collector/exporter/exportertest"
-	"go.opentelemetry.io/collector/receiver"
-	"go.opentelemetry.io/collector/testutils"
+	otlptrace "go.opentelemetry.io/collector/internal/data/opentelemetry-proto-gen/trace/v1"
+	"go.opentelemetry.io/collector/testutil"
 	"go.opentelemetry.io/collector/translator/conventions"
 	tracetranslator "go.opentelemetry.io/collector/translator/trace"
 )
@@ -74,7 +74,7 @@ func (t traceConsumer) ConsumeTraces(ctx context.Context, td pdata.Traces) error
 }
 
 func jaegerBatchToHTTPBody(b *tJaeger.Batch) (*http.Request, error) {
-	body, err := thrift.NewTSerializer().Write(b)
+	body, err := thrift.NewTSerializer().Write(context.Background(), b)
 	if err != nil {
 		return nil, err
 	}
@@ -253,16 +253,18 @@ func TestGRPCReception(t *testing.T) {
 func TestGRPCReceptionWithTLS(t *testing.T) {
 	// prepare
 	grpcServerOptions := []grpc.ServerOption{}
-	tlsCreds := receiver.TLSCredentials{
-		CertFile: path.Join(".", "testdata", "certificate.pem"),
-		KeyFile:  path.Join(".", "testdata", "key.pem"),
+	tlsCreds := configtls.TLSServerSetting{
+		TLSSetting: configtls.TLSSetting{
+			CertFile: path.Join(".", "testdata", "certificate.pem"),
+			KeyFile:  path.Join(".", "testdata", "key.pem"),
+		},
 	}
 
-	tlsOption, _ := tlsCreds.ToGrpcServerOption()
+	tlsCfg, err := tlsCreds.LoadTLSConfig()
+	assert.NoError(t, err)
+	grpcServerOptions = append(grpcServerOptions, grpc.Creds(credentials.NewTLS(tlsCfg)))
 
-	grpcServerOptions = append(grpcServerOptions, tlsOption)
-
-	port := testutils.GetAvailablePort(t)
+	port := testutil.GetAvailablePort(t)
 	config := &Configuration{
 		CollectorGRPCPort:    int(port),
 		CollectorGRPCOptions: grpcServerOptions,
@@ -445,7 +447,7 @@ func grpcFixture(t1 time.Time, d1, d2 time.Duration) *api_v2.PostSpansRequest {
 }
 
 func TestSampling(t *testing.T) {
-	port := testutils.GetAvailablePort(t)
+	port := testutil.GetAvailablePort(t)
 	config := &Configuration{
 		CollectorGRPCPort:          int(port),
 		RemoteSamplingStrategyFile: "testdata/strategies.json",
@@ -498,7 +500,7 @@ func TestSampling(t *testing.T) {
 }
 
 func TestSamplingFailsOnNotConfigured(t *testing.T) {
-	port := testutils.GetAvailablePort(t)
+	port := testutil.GetAvailablePort(t)
 	// prepare
 	config := &Configuration{
 		CollectorGRPCPort: int(port),
@@ -527,7 +529,7 @@ func TestSamplingFailsOnNotConfigured(t *testing.T) {
 }
 
 func TestSamplingFailsOnBadFile(t *testing.T) {
-	port := testutils.GetAvailablePort(t)
+	port := testutil.GetAvailablePort(t)
 	// prepare
 	config := &Configuration{
 		CollectorGRPCPort:          int(port),
@@ -550,10 +552,12 @@ func TestSamplingStrategiesMutualTLS(t *testing.T) {
 	clientKeyPath := path.Join(".", "testdata", "client.key")
 
 	// start gRPC server that serves sampling strategies
-	tlsCfgOpts := configgrpc.TLSConfig{
-		CaCert:     caPath,
-		ClientCert: serverCertPath,
-		ClientKey:  serverKeyPath,
+	tlsCfgOpts := configtls.TLSServerSetting{
+		TLSSetting: configtls.TLSSetting{
+			CAFile:   caPath,
+			CertFile: serverCertPath,
+			KeyFile:  serverKeyPath,
+		},
 	}
 	tlsCfg, err := tlsCfgOpts.LoadTLSConfig()
 	require.NoError(t, err)
@@ -570,16 +574,18 @@ func TestSamplingStrategiesMutualTLS(t *testing.T) {
 	port, err := randomAvailablePort()
 	require.NoError(t, err)
 	hostEndpoint := fmt.Sprintf("localhost:%d", port)
-	factory := &Factory{}
+	factory := NewFactory()
 	cfg := factory.CreateDefaultConfig().(*Config)
 	cfg.RemoteSampling = &RemoteSamplingConfig{
-		GRPCSettings: configgrpc.GRPCSettings{
-			TLSConfig: configgrpc.TLSConfig{
-				UseSecure:          true,
-				CaCert:             caPath,
-				ClientCert:         clientCertPath,
-				ClientKey:          clientKeyPath,
-				ServerNameOverride: "localhost",
+		GRPCClientSettings: configgrpc.GRPCClientSettings{
+			TLSSetting: configtls.TLSClientSetting{
+				TLSSetting: configtls.TLSSetting{
+					CAFile:   caPath,
+					CertFile: clientCertPath,
+					KeyFile:  clientKeyPath,
+				},
+				Insecure:   false,
+				ServerName: "localhost",
 			},
 			Endpoint: serverAddr.String(),
 		},
@@ -588,10 +594,8 @@ func TestSamplingStrategiesMutualTLS(t *testing.T) {
 	// at least one protocol has to be enabled
 	thriftHTTPPort, err := randomAvailablePort()
 	require.NoError(t, err)
-	cfg.Protocols = map[string]*receiver.SecureReceiverSettings{
-		"thrift_http": {ReceiverSettings: configmodels.ReceiverSettings{
-			Endpoint: fmt.Sprintf("localhost:%d", thriftHTTPPort),
-		}},
+	cfg.Protocols.ThriftHTTP = &confighttp.HTTPServerSettings{
+		Endpoint: fmt.Sprintf("localhost:%d", thriftHTTPPort),
 	}
 	exp, err := factory.CreateTraceReceiver(context.Background(), component.ReceiverCreateParams{Logger: zap.NewNop()}, cfg, exportertest.NewNopTraceExporter())
 	require.NoError(t, err)
@@ -616,4 +620,24 @@ func randomAvailablePort() (int, error) {
 	}
 	defer listener.Close()
 	return listener.Addr().(*net.TCPAddr).Port, nil
+}
+
+func TestConsumeThriftTrace(t *testing.T) {
+	tests := []struct {
+		batch    *tJaeger.Batch
+		numSpans int
+	}{
+		{
+			batch: nil,
+		},
+		{
+			batch:    &tJaeger.Batch{Spans: []*tJaeger.Span{{}}},
+			numSpans: 1,
+		},
+	}
+	for _, test := range tests {
+		numSpans, err := consumeTraces(context.Background(), test.batch, exportertest.NewNopTraceExporter())
+		require.NoError(t, err)
+		assert.Equal(t, test.numSpans, numSpans)
+	}
 }

@@ -1,4 +1,4 @@
-// Copyright 2019, OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -46,18 +46,14 @@ func TestCreateInstanceViaFactory(t *testing.T) {
 
 	// Default config doesn't have default endpoint so creating from it should
 	// fail.
-	ze, err := factory.CreateTraceExporter(
-		zap.NewNop(),
-		cfg)
+	ze, err := factory.CreateTraceExporter(zap.NewNop(), cfg)
 	assert.Error(t, err)
 	assert.Nil(t, ze)
 
 	// URL doesn't have a default value so set it directly.
 	zeCfg := cfg.(*Config)
-	zeCfg.URL = "http://some.location.org:9411/api/v2/spans"
-	ze, err = factory.CreateTraceExporter(
-		zap.NewNop(),
-		cfg)
+	zeCfg.Endpoint = "http://some.location.org:9411/api/v2/spans"
+	ze, err = factory.CreateTraceExporter(zap.NewNop(), cfg)
 	assert.NoError(t, err)
 	assert.NotNil(t, ze)
 }

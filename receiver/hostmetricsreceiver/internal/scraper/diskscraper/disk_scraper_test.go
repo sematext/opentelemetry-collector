@@ -1,4 +1,4 @@
-// Copyright 2020, OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@ package diskscraper
 
 import (
 	"context"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -25,29 +26,9 @@ import (
 	"go.opentelemetry.io/collector/receiver/hostmetricsreceiver/internal"
 )
 
-type validationFn func(*testing.T, pdata.MetricSlice)
-
 func TestScrapeMetrics(t *testing.T) {
-	createScraperAndValidateScrapedMetrics(t, &Config{}, func(t *testing.T, metrics pdata.MetricSlice) {
-		// expect 3 metrics
-		assert.Equal(t, 3, metrics.Len())
+	scraper := newDiskScraper(context.Background(), &Config{})
 
-		// for each disk metric, expect a read & write datapoint for at least one drive
-		assertDiskMetricMatchesDescriptorAndHasReadAndWriteDataPoints(t, metrics.At(0), metricDiskBytesDescriptor)
-		assertDiskMetricMatchesDescriptorAndHasReadAndWriteDataPoints(t, metrics.At(1), metricDiskOpsDescriptor)
-		assertDiskMetricMatchesDescriptorAndHasReadAndWriteDataPoints(t, metrics.At(2), metricDiskTimeDescriptor)
-	})
-}
-
-func assertDiskMetricMatchesDescriptorAndHasReadAndWriteDataPoints(t *testing.T, metric pdata.Metric, expectedDescriptor pdata.MetricDescriptor) {
-	internal.AssertDescriptorEqual(t, expectedDescriptor, metric.MetricDescriptor())
-	assert.GreaterOrEqual(t, metric.Int64DataPoints().Len(), 2)
-	internal.AssertInt64MetricLabelHasValue(t, metric, 0, directionLabelName, readDirectionLabelValue)
-	internal.AssertInt64MetricLabelHasValue(t, metric, 1, directionLabelName, writeDirectionLabelValue)
-}
-
-func createScraperAndValidateScrapedMetrics(t *testing.T, config *Config, assertFn validationFn) {
-	scraper := newDiskScraper(context.Background(), config)
 	err := scraper.Initialize(context.Background())
 	require.NoError(t, err, "Failed to initialize disk scraper: %v", err)
 	defer func() { assert.NoError(t, scraper.Close(context.Background())) }()
@@ -55,5 +36,26 @@ func createScraperAndValidateScrapedMetrics(t *testing.T, config *Config, assert
 	metrics, err := scraper.ScrapeMetrics(context.Background())
 	require.NoError(t, err, "Failed to scrape metrics: %v", err)
 
-	assertFn(t, metrics)
+	assert.GreaterOrEqual(t, metrics.Len(), 2)
+
+	assertDiskMetricValid(t, metrics.At(0), diskIODescriptor, 0)
+	assertDiskMetricValid(t, metrics.At(1), diskOpsDescriptor, 0)
+
+	if runtime.GOOS != "windows" {
+		assertDiskMetricValid(t, metrics.At(2), diskTimeDescriptor, 0)
+	}
+
+	if runtime.GOOS == "linux" {
+		assertDiskMetricValid(t, metrics.At(3), diskMergedDescriptor, 0)
+	}
+}
+
+func assertDiskMetricValid(t *testing.T, metric pdata.Metric, expectedDescriptor pdata.MetricDescriptor, startTime pdata.TimestampUnixNano) {
+	internal.AssertDescriptorEqual(t, expectedDescriptor, metric.MetricDescriptor())
+	if startTime != 0 {
+		internal.AssertInt64MetricStartTimeEquals(t, metric, startTime)
+	}
+	assert.GreaterOrEqual(t, metric.Int64DataPoints().Len(), 2)
+	internal.AssertInt64MetricLabelHasValue(t, metric, 0, directionLabelName, readDirectionLabelValue)
+	internal.AssertInt64MetricLabelHasValue(t, metric, 1, directionLabelName, writeDirectionLabelValue)
 }

@@ -1,4 +1,4 @@
-// Copyright 2019, OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,9 +17,9 @@ package testbed
 import (
 	"testing"
 
-	"go.opentelemetry.io/collector/testutils"
+	"go.opentelemetry.io/collector/testutil"
 )
 
 func GetAvailablePort(t *testing.T) int {
-	return int(testutils.GetAvailablePort(t))
+	return int(testutil.GetAvailablePort(t))
 }

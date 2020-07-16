@@ -1,4 +1,4 @@
-// Copyright 2019, OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@ import (
 
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/config/configerror"
+	"go.opentelemetry.io/collector/config/confighttp"
 	"go.opentelemetry.io/collector/config/configmodels"
 	"go.opentelemetry.io/collector/consumer"
 )
@@ -31,7 +32,7 @@ const (
 	// The value of "type" key in configuration.
 	typeStr = "zipkin"
 
-	defaultBindEndpoint = "localhost:9411"
+	defaultBindEndpoint = "0.0.0.0:9411"
 )
 
 // Factory is the factory for Zipkin receiver.
@@ -52,8 +53,10 @@ func (f *Factory) CustomUnmarshaler() component.CustomUnmarshaler {
 func (f *Factory) CreateDefaultConfig() configmodels.Receiver {
 	return &Config{
 		ReceiverSettings: configmodels.ReceiverSettings{
-			TypeVal:  typeStr,
-			NameVal:  typeStr,
+			TypeVal: typeStr,
+			NameVal: typeStr,
+		},
+		HTTPServerSettings: confighttp.HTTPServerSettings{
 			Endpoint: defaultBindEndpoint,
 		},
 	}
@@ -66,16 +69,11 @@ func (f *Factory) CreateTraceReceiver(
 	cfg configmodels.Receiver,
 	nextConsumer consumer.TraceConsumerOld,
 ) (component.TraceReceiver, error) {
-
 	rCfg := cfg.(*Config)
-	return New(rCfg.Name(), rCfg.Endpoint, nextConsumer)
+	return New(rCfg, nextConsumer)
 }
 
 // CreateMetricsReceiver creates a metrics receiver based on provided config.
-func (f *Factory) CreateMetricsReceiver(
-	logger *zap.Logger,
-	cfg configmodels.Receiver,
-	consumer consumer.MetricsConsumerOld,
-) (component.MetricsReceiver, error) {
+func (f *Factory) CreateMetricsReceiver(ctx context.Context, logger *zap.Logger, cfg configmodels.Receiver, nextConsumer consumer.MetricsConsumerOld) (component.MetricsReceiver, error) {
 	return nil, configerror.ErrDataTypeIsNotSupported
 }

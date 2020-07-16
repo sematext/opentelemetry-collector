@@ -1,4 +1,4 @@
-// Copyright 2019, OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -288,7 +288,7 @@ func assertEqualMetricsData(t *testing.T, expected consumerdata.MetricsData, act
 func testPipeline(t *testing.T, pipelineName string, exporterNames []string) {
 	factories, err := config.ExampleComponents()
 	assert.NoError(t, err)
-	attrFactory := &attributesprocessor.Factory{}
+	attrFactory := attributesprocessor.NewFactory()
 	factories.Processors[attrFactory.Type()] = attrFactory
 	cfg, err := config.LoadConfigFile(t, "testdata/pipelines_builder.yaml", factories)
 	// Load the config
@@ -348,7 +348,7 @@ func testPipeline(t *testing.T, pipelineName string, exporterNames []string) {
 func TestPipelinesBuilder_Error(t *testing.T) {
 	factories, err := config.ExampleComponents()
 	assert.NoError(t, err)
-	attrFactory := &attributesprocessor.Factory{}
+	attrFactory := attributesprocessor.NewFactory()
 	factories.Processors[attrFactory.Type()] = attrFactory
 	cfg, err := config.LoadConfigFile(t, "testdata/pipelines_builder.yaml", factories)
 	require.Nil(t, err)

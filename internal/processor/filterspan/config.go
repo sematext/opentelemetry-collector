@@ -1,4 +1,4 @@
-// Copyright 2020, OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -13,6 +13,10 @@
 // limitations under the License.
 
 package filterspan
+
+import (
+	"go.opentelemetry.io/collector/internal/processor/filterset"
+)
 
 // MatchConfig has two optional MatchProperties one to define what is processed
 // by the processor, captured under the 'include' and the second, exclude, to
@@ -61,9 +65,8 @@ type MatchConfig struct {
 // Please refer to processor/attributesprocessor/testdata/config.yaml and
 // processor/spanprocessor/testdata/config.yaml for valid configurations.
 type MatchProperties struct {
-	// MatchType controls how items in "services" and "span_names" arrays are
-	// interpreted. Possible values are "regexp" or "strict".
-	MatchType MatchType `mapstructure:"match_type"`
+	// Config configures the matching patterns used when matching span properties.
+	filterset.Config `mapstructure:",squash"`
 
 	// Note: one of Services, SpanNames or Attributes must be specified with a
 	// non-empty value for a valid configuration.
@@ -84,17 +87,6 @@ type MatchProperties struct {
 	// This is an optional field.
 	Attributes []Attribute `mapstructure:"attributes"`
 }
-
-// MatchType defines possible match types.
-type MatchType string
-
-const (
-	MatchTypeRegexp MatchType = "regexp"
-	MatchTypeStrict MatchType = "strict"
-)
-
-// MatchTypeFieldName is the mapstructure field name for MatchProperties.MatchType field.
-const MatchTypeFieldName = "match_type"
 
 // MatchTypeFieldName is the mapstructure field name for MatchProperties.Attributes field.
 const AttributesFieldName = "attributes"

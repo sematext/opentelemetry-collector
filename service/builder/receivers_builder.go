@@ -1,4 +1,4 @@
-// Copyright 2019, OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -109,7 +109,7 @@ func (rb *ReceiversBuilder) Build() (Receivers, error) {
 		rcv, err := rb.buildReceiver(logger, cfg)
 		if err != nil {
 			if err == errUnusedReceiver {
-				rb.logger.Info("Ignoring receiver as it is not used by any pipeline", zap.String("receiver", cfg.Name()))
+				logger.Info("Ignoring receiver as it is not used by any pipeline", zap.String("receiver", cfg.Name()))
 				continue
 			}
 			return nil, err
@@ -417,13 +417,13 @@ func createMetricsReceiver(
 	// If both receiver and consumer are of the old type (can manipulate on OC metrics only),
 	// use Factory.CreateMetricsReceiver.
 	if nextConsumer, ok := nextConsumer.(consumer.MetricsConsumerOld); ok {
-		return factoryOld.CreateMetricsReceiver(logger, cfg, nextConsumer)
+		return factoryOld.CreateMetricsReceiver(context.Background(), logger, cfg, nextConsumer)
 	}
 
 	// If receiver is of the old type, but downstream consumer is of the new type,
 	// use NewInternalToOCMetricsConverter compatibility shim to convert metrics from internal format to OC.
 	metricsConverter := converter.NewOCToInternalMetricsConverter(nextConsumer.(consumer.MetricsConsumer))
-	return factoryOld.CreateMetricsReceiver(logger, cfg, metricsConverter)
+	return factoryOld.CreateMetricsReceiver(context.Background(), logger, cfg, metricsConverter)
 }
 
 // createLogReceiver creates a log receiver using given factory and next consumer.

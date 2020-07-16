@@ -1,4 +1,4 @@
-// Copyright 2019, OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -23,8 +23,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.opentelemetry.io/collector/config"
+	"go.opentelemetry.io/collector/config/configgrpc"
 	"go.opentelemetry.io/collector/config/configmodels"
-	"go.opentelemetry.io/collector/receiver"
+	"go.opentelemetry.io/collector/config/confignet"
+	"go.opentelemetry.io/collector/config/configtls"
 )
 
 func TestLoadConfig(t *testing.T) {
@@ -46,39 +48,44 @@ func TestLoadConfig(t *testing.T) {
 	r1 := cfg.Receivers["opencensus/customname"].(*Config)
 	assert.Equal(t, r1,
 		&Config{
-			SecureReceiverSettings: receiver.SecureReceiverSettings{
-				ReceiverSettings: configmodels.ReceiverSettings{
-					TypeVal:  typeStr,
-					NameVal:  "opencensus/customname",
-					Endpoint: "0.0.0.0:9090",
-				},
+			ReceiverSettings: configmodels.ReceiverSettings{
+				TypeVal: typeStr,
+				NameVal: "opencensus/customname",
 			},
-			Transport: "tcp",
+			GRPCServerSettings: configgrpc.GRPCServerSettings{
+				NetAddr: confignet.NetAddr{
+					Endpoint:  "0.0.0.0:9090",
+					Transport: "tcp",
+				},
+				ReadBufferSize: 512 * 1024,
+			},
 		})
 
 	r2 := cfg.Receivers["opencensus/keepalive"].(*Config)
 	assert.Equal(t, r2,
 		&Config{
-			SecureReceiverSettings: receiver.SecureReceiverSettings{
-				ReceiverSettings: configmodels.ReceiverSettings{
-					TypeVal:  typeStr,
-					NameVal:  "opencensus/keepalive",
-					Endpoint: "localhost:55678",
-				},
-				TLSCredentials: nil,
+			ReceiverSettings: configmodels.ReceiverSettings{
+				TypeVal: typeStr,
+				NameVal: "opencensus/keepalive",
 			},
-			Transport: "tcp",
-			Keepalive: &serverParametersAndEnforcementPolicy{
-				ServerParameters: &keepaliveServerParameters{
-					MaxConnectionIdle:     11 * time.Second,
-					MaxConnectionAge:      12 * time.Second,
-					MaxConnectionAgeGrace: 13 * time.Second,
-					Time:                  30 * time.Second,
-					Timeout:               5 * time.Second,
+			GRPCServerSettings: configgrpc.GRPCServerSettings{
+				NetAddr: confignet.NetAddr{
+					Endpoint:  "0.0.0.0:55678",
+					Transport: "tcp",
 				},
-				EnforcementPolicy: &keepaliveEnforcementPolicy{
-					MinTime:             10 * time.Second,
-					PermitWithoutStream: true,
+				ReadBufferSize: 512 * 1024,
+				Keepalive: &configgrpc.KeepaliveServerConfig{
+					ServerParameters: &configgrpc.KeepaliveServerParameters{
+						MaxConnectionIdle:     11 * time.Second,
+						MaxConnectionAge:      12 * time.Second,
+						MaxConnectionAgeGrace: 13 * time.Second,
+						Time:                  30 * time.Second,
+						Timeout:               5 * time.Second,
+					},
+					EnforcementPolicy: &configgrpc.KeepaliveEnforcementPolicy{
+						MinTime:             10 * time.Second,
+						PermitWithoutStream: true,
+					},
 				},
 			},
 		})
@@ -86,19 +93,23 @@ func TestLoadConfig(t *testing.T) {
 	r3 := cfg.Receivers["opencensus/msg-size-conc-connect-max-idle"].(*Config)
 	assert.Equal(t, r3,
 		&Config{
-			SecureReceiverSettings: receiver.SecureReceiverSettings{
-				ReceiverSettings: configmodels.ReceiverSettings{
-					TypeVal:  typeStr,
-					NameVal:  "opencensus/msg-size-conc-connect-max-idle",
-					Endpoint: "localhost:55678",
-				},
+			ReceiverSettings: configmodels.ReceiverSettings{
+				TypeVal: typeStr,
+				NameVal: "opencensus/msg-size-conc-connect-max-idle",
 			},
-			Transport:            "tcp",
-			MaxRecvMsgSizeMiB:    32,
-			MaxConcurrentStreams: 16,
-			Keepalive: &serverParametersAndEnforcementPolicy{
-				ServerParameters: &keepaliveServerParameters{
-					MaxConnectionIdle: 10 * time.Second,
+			GRPCServerSettings: configgrpc.GRPCServerSettings{
+				NetAddr: confignet.NetAddr{
+					Endpoint:  "0.0.0.0:55678",
+					Transport: "tcp",
+				},
+				MaxRecvMsgSizeMiB:    32,
+				MaxConcurrentStreams: 16,
+				ReadBufferSize:       1024,
+				WriteBufferSize:      1024,
+				Keepalive: &configgrpc.KeepaliveServerConfig{
+					ServerParameters: &configgrpc.KeepaliveServerParameters{
+						MaxConnectionIdle: 10 * time.Second,
+					},
 				},
 			},
 		})
@@ -108,44 +119,77 @@ func TestLoadConfig(t *testing.T) {
 	r4 := cfg.Receivers["opencensus/tlscredentials"].(*Config)
 	assert.Equal(t, r4,
 		&Config{
-			SecureReceiverSettings: receiver.SecureReceiverSettings{
-				ReceiverSettings: configmodels.ReceiverSettings{
-					TypeVal:  typeStr,
-					NameVal:  "opencensus/tlscredentials",
-					Endpoint: "localhost:55678",
+			ReceiverSettings: configmodels.ReceiverSettings{
+				TypeVal: typeStr,
+				NameVal: "opencensus/tlscredentials",
+			},
+			GRPCServerSettings: configgrpc.GRPCServerSettings{
+				NetAddr: confignet.NetAddr{
+					Endpoint:  "0.0.0.0:55678",
+					Transport: "tcp",
 				},
-				TLSCredentials: &receiver.TLSCredentials{
-					CertFile: "test.crt",
-					KeyFile:  "test.key",
+				ReadBufferSize: 512 * 1024,
+				TLSSetting: &configtls.TLSServerSetting{
+					TLSSetting: configtls.TLSSetting{
+						CertFile: "test.crt",
+						KeyFile:  "test.key",
+					},
 				},
 			},
-			Transport: "tcp",
 		})
 
 	r5 := cfg.Receivers["opencensus/cors"].(*Config)
 	assert.Equal(t, r5,
 		&Config{
-			SecureReceiverSettings: receiver.SecureReceiverSettings{
-				ReceiverSettings: configmodels.ReceiverSettings{
-					TypeVal:  typeStr,
-					NameVal:  "opencensus/cors",
-					Endpoint: "localhost:55678",
-				},
+			ReceiverSettings: configmodels.ReceiverSettings{
+				TypeVal: typeStr,
+				NameVal: "opencensus/cors",
 			},
-			Transport:   "tcp",
+			GRPCServerSettings: configgrpc.GRPCServerSettings{
+				NetAddr: confignet.NetAddr{
+					Endpoint:  "0.0.0.0:55678",
+					Transport: "tcp",
+				},
+				ReadBufferSize: 512 * 1024,
+			},
 			CorsOrigins: []string{"https://*.test.com", "https://test.com"},
 		})
 
 	r6 := cfg.Receivers["opencensus/uds"].(*Config)
 	assert.Equal(t, r6,
 		&Config{
-			SecureReceiverSettings: receiver.SecureReceiverSettings{
-				ReceiverSettings: configmodels.ReceiverSettings{
-					TypeVal:  typeStr,
-					NameVal:  "opencensus/uds",
-					Endpoint: "/tmp/opencensus.sock",
+			ReceiverSettings: configmodels.ReceiverSettings{
+				TypeVal: typeStr,
+				NameVal: "opencensus/uds",
+			},
+			GRPCServerSettings: configgrpc.GRPCServerSettings{
+				NetAddr: confignet.NetAddr{
+					Endpoint:  "/tmp/opencensus.sock",
+					Transport: "unix",
+				},
+				ReadBufferSize: 512 * 1024,
+			},
+		})
+}
+
+func TestBuildOptions_TLSCredentials(t *testing.T) {
+	cfg := Config{
+		ReceiverSettings: configmodels.ReceiverSettings{
+			NameVal: "IncorrectTLS",
+		},
+		GRPCServerSettings: configgrpc.GRPCServerSettings{
+			TLSSetting: &configtls.TLSServerSetting{
+				TLSSetting: configtls.TLSSetting{
+					CertFile: "willfail",
 				},
 			},
-			Transport: "unix",
-		})
+		},
+	}
+	_, err := cfg.buildOptions()
+	assert.EqualError(t, err, `failed to load TLS config: for auth via TLS, either both certificate and key must be supplied, or neither`)
+
+	cfg.TLSSetting = &configtls.TLSServerSetting{}
+	opt, err := cfg.buildOptions()
+	assert.NoError(t, err)
+	assert.NotNil(t, opt)
 }

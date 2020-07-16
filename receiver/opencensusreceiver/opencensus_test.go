@@ -1,4 +1,4 @@
-// Copyright 2019, OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -46,15 +46,15 @@ import (
 	"go.opentelemetry.io/collector/consumer/consumerdata"
 	"go.opentelemetry.io/collector/exporter/exportertest"
 	"go.opentelemetry.io/collector/internal"
-	"go.opentelemetry.io/collector/observability/observabilitytest"
-	"go.opentelemetry.io/collector/testutils"
+	"go.opentelemetry.io/collector/obsreport/obsreporttest"
+	"go.opentelemetry.io/collector/testutil"
 )
 
 const ocReceiver = "oc_receiver_test"
 
 // TODO(ccaraman): Migrate tests to use assert for validating functionality.
 func TestGrpcGateway_endToEnd(t *testing.T) {
-	addr := testutils.GetAvailableLocalAddress(t)
+	addr := testutil.GetAvailableLocalAddress(t)
 
 	// Set the buffer count to 1 to make it flush the test span immediately.
 	sink := new(exportertest.SinkTraceExporterOld)
@@ -152,7 +152,7 @@ func TestGrpcGateway_endToEnd(t *testing.T) {
 }
 
 func TestTraceGrpcGatewayCors_endToEnd(t *testing.T) {
-	addr := testutils.GetAvailableLocalAddress(t)
+	addr := testutil.GetAvailableLocalAddress(t)
 	corsOrigins := []string{"allowed-*.com"}
 
 	sink := new(exportertest.SinkTraceExporterOld)
@@ -177,7 +177,7 @@ func TestTraceGrpcGatewayCors_endToEnd(t *testing.T) {
 }
 
 func TestMetricsGrpcGatewayCors_endToEnd(t *testing.T) {
-	addr := testutils.GetAvailableLocalAddress(t)
+	addr := testutil.GetAvailableLocalAddress(t)
 	corsOrigins := []string{"allowed-*.com"}
 
 	sink := new(exportertest.SinkMetricsExporterOld)
@@ -207,7 +207,7 @@ func TestMetricsGrpcGatewayCors_endToEnd(t *testing.T) {
 func TestAcceptAllGRPCProtoAffiliatedContentTypes(t *testing.T) {
 	t.Skip("Currently a flaky test as we need a way to flush all written traces")
 
-	addr := testutils.GetAvailableLocalAddress(t)
+	addr := testutil.GetAvailableLocalAddress(t)
 	cbts := new(exportertest.SinkTraceExporterOld)
 	ocr, err := New(ocReceiver, "tcp", addr, cbts, nil)
 	require.NoError(t, err, "Failed to create trace receiver: %v", err)
@@ -331,7 +331,7 @@ func verifyCorsResp(t *testing.T, url string, origin string, wantStatus int, wan
 }
 
 func TestStopWithoutStartNeverCrashes(t *testing.T) {
-	addr := testutils.GetAvailableLocalAddress(t)
+	addr := testutil.GetAvailableLocalAddress(t)
 	ocr, err := New(ocReceiver, "tcp", addr, nil, nil)
 	require.NoError(t, err, "Failed to create an OpenCensus receiver: %v", err)
 	// Stop it before ever invoking Start*.
@@ -339,7 +339,7 @@ func TestStopWithoutStartNeverCrashes(t *testing.T) {
 }
 
 func TestNewPortAlreadyUsed(t *testing.T) {
-	addr := testutils.GetAvailableLocalAddress(t)
+	addr := testutil.GetAvailableLocalAddress(t)
 	ln, err := net.Listen("tcp", addr)
 	require.NoError(t, err, "failed to listen on %q: %v", addr, err)
 	defer ln.Close()
@@ -350,7 +350,7 @@ func TestNewPortAlreadyUsed(t *testing.T) {
 }
 
 func TestMultipleStopReceptionShouldNotError(t *testing.T) {
-	addr := testutils.GetAvailableLocalAddress(t)
+	addr := testutil.GetAvailableLocalAddress(t)
 	r, err := New(ocReceiver, "tcp", addr, new(exportertest.SinkTraceExporterOld), new(exportertest.SinkMetricsExporterOld))
 	require.NoError(t, err)
 	require.NotNil(t, r)
@@ -360,7 +360,7 @@ func TestMultipleStopReceptionShouldNotError(t *testing.T) {
 }
 
 func TestStartWithoutConsumersShouldFail(t *testing.T) {
-	addr := testutils.GetAvailableLocalAddress(t)
+	addr := testutil.GetAvailableLocalAddress(t)
 	r, err := New(ocReceiver, "tcp", addr, nil, nil)
 	require.NoError(t, err)
 	require.NotNil(t, r)
@@ -371,10 +371,9 @@ func TestStartWithoutConsumersShouldFail(t *testing.T) {
 func tempSocketName(t *testing.T) string {
 	tmpfile, err := ioutil.TempFile("", "sock")
 	require.NoError(t, err)
+	require.NoError(t, tmpfile.Close())
 	socket := tmpfile.Name()
-	err = os.Remove(socket)
-	require.NoError(t, err)
-
+	require.NoError(t, os.Remove(socket))
 	return socket
 }
 
@@ -462,7 +461,7 @@ func TestOCReceiverTrace_HandleNextConsumerResponse(t *testing.T) {
 		},
 	}
 
-	addr := testutils.GetAvailableLocalAddress(t)
+	addr := testutil.GetAvailableLocalAddress(t)
 	msg := &agenttracepb.ExportTraceServiceRequest{
 		Node: &commonpb.Node{
 			ServiceInfo: &commonpb.ServiceInfo{Name: "test-svc"},
@@ -518,13 +517,14 @@ func TestOCReceiverTrace_HandleNextConsumerResponse(t *testing.T) {
 	for _, exporter := range exporters {
 		for _, tt := range tests {
 			t.Run(tt.name+"/"+exporter.receiverTag, func(t *testing.T) {
-				doneFn := observabilitytest.SetupRecordedMetricsTest()
+				doneFn, err := obsreporttest.SetupRecordedMetricsTest()
+				require.NoError(t, err)
 				defer doneFn()
 
 				sink := new(sinkTraceConsumer)
 
 				var opts []Option
-				ocr, err := New(ocReceiver, "tcp", addr, nil, nil, opts...)
+				ocr, err := New(exporter.receiverTag, "tcp", addr, nil, nil, opts...)
 				require.Nil(t, err)
 				require.NotNil(t, ocr)
 
@@ -553,12 +553,7 @@ func TestOCReceiverTrace_HandleNextConsumerResponse(t *testing.T) {
 				}
 
 				require.Equal(t, tt.expectedReceivedBatches, len(sink.AllTraces()))
-				require.Nil(
-					t,
-					observabilitytest.CheckValueViewReceiverReceivedSpans(
-						exporter.receiverTag,
-						tt.expectedReceivedBatches),
-				)
+				obsreporttest.CheckReceiverTracesViews(t, exporter.receiverTag, "grpc", int64(tt.expectedReceivedBatches), int64(tt.expectedIngestionBlockedRPCs))
 			})
 		}
 	}
@@ -622,7 +617,7 @@ func TestOCReceiverMetrics_HandleNextConsumerResponse(t *testing.T) {
 		Timeseries:       []*metricspb.TimeSeries{ts},
 	}
 
-	addr := testutils.GetAvailableLocalAddress(t)
+	addr := testutil.GetAvailableLocalAddress(t)
 	msg := &agentmetricspb.ExportMetricsServiceRequest{
 		Node: &commonpb.Node{
 			ServiceInfo: &commonpb.ServiceInfo{Name: "test-svc"},
@@ -671,13 +666,14 @@ func TestOCReceiverMetrics_HandleNextConsumerResponse(t *testing.T) {
 	for _, exporter := range exporters {
 		for _, tt := range tests {
 			t.Run(tt.name+"/"+exporter.receiverTag, func(t *testing.T) {
-				doneFn := observabilitytest.SetupRecordedMetricsTest()
+				doneFn, err := obsreporttest.SetupRecordedMetricsTest()
+				require.NoError(t, err)
 				defer doneFn()
 
 				sink := new(sinkMetricsConsumer)
 
 				var opts []Option
-				ocr, err := New(ocReceiver, "tcp", addr, nil, nil, opts...)
+				ocr, err := New(exporter.receiverTag, "tcp", addr, nil, nil, opts...)
 				require.Nil(t, err)
 				require.NotNil(t, ocr)
 
@@ -706,12 +702,7 @@ func TestOCReceiverMetrics_HandleNextConsumerResponse(t *testing.T) {
 				}
 
 				require.Equal(t, tt.expectedReceivedBatches, len(sink.AllMetrics()))
-				require.Nil(
-					t,
-					observabilitytest.CheckValueViewReceiverReceivedTimeSeries(
-						exporter.receiverTag,
-						tt.expectedReceivedBatches),
-				)
+				obsreporttest.CheckReceiverMetricsViews(t, exporter.receiverTag, "grpc", int64(tt.expectedReceivedBatches), int64(tt.expectedIngestionBlockedRPCs))
 			})
 		}
 	}

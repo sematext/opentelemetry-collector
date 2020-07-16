@@ -1,4 +1,4 @@
-// Copyright 2019, OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,6 +15,7 @@
 package zipkinexporter
 
 import (
+	"go.opentelemetry.io/collector/config/confighttp"
 	"go.opentelemetry.io/collector/config/configmodels"
 )
 
@@ -22,15 +23,11 @@ import (
 type Config struct {
 	configmodels.ExporterSettings `mapstructure:",squash"` // squash ensures fields are correctly decoded in embedded struct.
 
-	// The URL to send the Zipkin trace data to (e.g.:
-	// http://some.url:9411/api/v2/spans).
-	URL    string `mapstructure:"url"`
-	Format string `mapstructure:"format"`
+	// Configures the exporter client.
+	// The Endpoint to send the Zipkin trace data to (e.g.: http://some.url:9411/api/v2/spans).
+	confighttp.HTTPClientSettings `mapstructure:",squash"` // squash ensures fields are correctly decoded in embedded struct.
 
-	// Whether resource labels from TraceData are to be included in Span. True by default
-	// This is a temporary flag and will be removed soon,
-	// see https://go.opentelemetry.io/collector/issues/595
-	ExportResourceLabels *bool `mapstructure:"export_resource_labels"`
+	Format string `mapstructure:"format"`
 
 	DefaultServiceName string `mapstructure:"default_service_name"`
 }

@@ -1,4 +1,4 @@
-// Copyright 2020, OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,12 +16,10 @@ package networkscraper
 
 import (
 	"context"
-	"strings"
 	"time"
 
 	"github.com/shirou/gopsutil/host"
 	"github.com/shirou/gopsutil/net"
-	"go.opencensus.io/trace"
 
 	"go.opentelemetry.io/collector/component/componenterror"
 	"go.opentelemetry.io/collector/consumer/pdata"
@@ -31,21 +29,26 @@ import (
 type scraper struct {
 	config    *Config
 	startTime pdata.TimestampUnixNano
+
+	// for mocking
+	bootTime    func() (uint64, error)
+	ioCounters  func(bool) ([]net.IOCountersStat, error)
+	connections func(string) ([]net.ConnectionStat, error)
 }
 
 // newNetworkScraper creates a set of Network related metrics
 func newNetworkScraper(_ context.Context, cfg *Config) *scraper {
-	return &scraper{config: cfg}
+	return &scraper{config: cfg, bootTime: host.BootTime, ioCounters: net.IOCounters, connections: net.Connections}
 }
 
 // Initialize
 func (s *scraper) Initialize(_ context.Context) error {
-	bootTime, err := host.BootTime()
+	bootTime, err := s.bootTime()
 	if err != nil {
 		return err
 	}
 
-	s.startTime = pdata.TimestampUnixNano(bootTime)
+	s.startTime = pdata.TimestampUnixNano(bootTime * 1e9)
 	return nil
 }
 
@@ -55,20 +58,17 @@ func (s *scraper) Close(_ context.Context) error {
 }
 
 // ScrapeMetrics
-func (s *scraper) ScrapeMetrics(ctx context.Context) (pdata.MetricSlice, error) {
-	_, span := trace.StartSpan(ctx, "networkscraper.ScrapeMetrics")
-	defer span.End()
-
+func (s *scraper) ScrapeMetrics(_ context.Context) (pdata.MetricSlice, error) {
 	metrics := pdata.NewMetricSlice()
 
 	var errors []error
 
-	err := scrapeAndAppendNetworkCounterMetrics(metrics, s.startTime)
+	err := s.scrapeAndAppendNetworkCounterMetrics(metrics, s.startTime)
 	if err != nil {
 		errors = append(errors, err)
 	}
 
-	err = scrapeAndAppendNetworkTCPConnectionsMetric(metrics)
+	err = s.scrapeAndAppendNetworkTCPConnectionsMetric(metrics)
 	if err != nil {
 		errors = append(errors, err)
 	}
@@ -80,11 +80,9 @@ func (s *scraper) ScrapeMetrics(ctx context.Context) (pdata.MetricSlice, error) 
 	return metrics, nil
 }
 
-func scrapeAndAppendNetworkCounterMetrics(metrics pdata.MetricSlice, startTime pdata.TimestampUnixNano) error {
+func (s *scraper) scrapeAndAppendNetworkCounterMetrics(metrics pdata.MetricSlice, startTime pdata.TimestampUnixNano) error {
 	// get total stats only
-	perNetworkInterfaceController := false
-
-	networkStatsSlice, err := net.IOCounters(perNetworkInterfaceController)
+	networkStatsSlice, err := s.ioCounters( /*perNetworkInterfaceController=*/ false)
 	if err != nil {
 		return err
 	}
@@ -93,10 +91,10 @@ func scrapeAndAppendNetworkCounterMetrics(metrics pdata.MetricSlice, startTime p
 
 	startIdx := metrics.Len()
 	metrics.Resize(startIdx + 4)
-	initializeNetworkMetric(metrics.At(startIdx+0), metricNetworkPacketsDescriptor, startTime, networkStats.PacketsSent, networkStats.PacketsRecv)
-	initializeNetworkMetric(metrics.At(startIdx+1), metricNetworkDroppedPacketsDescriptor, startTime, networkStats.Dropout, networkStats.Dropin)
-	initializeNetworkMetric(metrics.At(startIdx+2), metricNetworkErrorsDescriptor, startTime, networkStats.Errout, networkStats.Errin)
-	initializeNetworkMetric(metrics.At(startIdx+3), metricNetworkBytesDescriptor, startTime, networkStats.BytesSent, networkStats.BytesRecv)
+	initializeNetworkMetric(metrics.At(startIdx+0), networkPacketsDescriptor, startTime, networkStats.PacketsSent, networkStats.PacketsRecv)
+	initializeNetworkMetric(metrics.At(startIdx+1), networkDroppedPacketsDescriptor, startTime, networkStats.Dropout, networkStats.Dropin)
+	initializeNetworkMetric(metrics.At(startIdx+2), networkErrorsDescriptor, startTime, networkStats.Errout, networkStats.Errin)
+	initializeNetworkMetric(metrics.At(startIdx+3), networkIODescriptor, startTime, networkStats.BytesSent, networkStats.BytesRecv)
 	return nil
 }
 
@@ -117,13 +115,13 @@ func initializeNetworkDataPoint(dataPoint pdata.Int64DataPoint, startTime pdata.
 	dataPoint.SetValue(value)
 }
 
-func scrapeAndAppendNetworkTCPConnectionsMetric(metrics pdata.MetricSlice) error {
-	connections, err := net.Connections("tcp")
+func (s *scraper) scrapeAndAppendNetworkTCPConnectionsMetric(metrics pdata.MetricSlice) error {
+	connections, err := s.connections("tcp")
 	if err != nil {
 		return err
 	}
 
-	connectionStatusCounts := getConnectionStatusCounts(connections)
+	connectionStatusCounts := getTCPConnectionStatusCounts(connections)
 
 	startIdx := metrics.Len()
 	metrics.Resize(startIdx + 1)
@@ -131,28 +129,42 @@ func scrapeAndAppendNetworkTCPConnectionsMetric(metrics pdata.MetricSlice) error
 	return nil
 }
 
-func getConnectionStatusCounts(connections []net.ConnectionStat) map[string]int64 {
-	connectionStatuses := make(map[string]int64, len(connections))
-	for _, connection := range connections {
-		connectionStatuses[strings.ToLower(connection.Status)]++
+func getTCPConnectionStatusCounts(connections []net.ConnectionStat) map[string]int64 {
+	var tcpStatuses = map[string]int64{
+		"CLOSE_WAIT":   0,
+		"CLOSED":       0,
+		"CLOSING":      0,
+		"DELETE":       0,
+		"ESTABLISHED":  0,
+		"FIN_WAIT_1":   0,
+		"FIN_WAIT_2":   0,
+		"LAST_ACK":     0,
+		"LISTEN":       0,
+		"SYN_SENT":     0,
+		"SYN_RECEIVED": 0,
+		"TIME_WAIT":    0,
 	}
-	return connectionStatuses
+
+	for _, connection := range connections {
+		tcpStatuses[connection.Status]++
+	}
+	return tcpStatuses
 }
 
 func initializeNetworkTCPConnectionsMetric(metric pdata.Metric, connectionStateCounts map[string]int64) {
-	metricNetworkTCPConnectionDescriptor.CopyTo(metric.MetricDescriptor())
+	networkTCPConnectionsDescriptor.CopyTo(metric.MetricDescriptor())
 
 	idps := metric.Int64DataPoints()
 	idps.Resize(len(connectionStateCounts))
 
 	i := 0
 	for connectionState, count := range connectionStateCounts {
-		initializeTCPConnectionsDataPoint(idps.At(i), connectionState, count)
+		initializeNetworkTCPConnectionsDataPoint(idps.At(i), connectionState, count)
 		i++
 	}
 }
 
-func initializeTCPConnectionsDataPoint(dataPoint pdata.Int64DataPoint, stateLabel string, value int64) {
+func initializeNetworkTCPConnectionsDataPoint(dataPoint pdata.Int64DataPoint, stateLabel string, value int64) {
 	labelsMap := dataPoint.LabelsMap()
 	labelsMap.Insert(stateLabelName, stateLabel)
 	dataPoint.SetTimestamp(pdata.TimestampUnixNano(uint64(time.Now().UnixNano())))

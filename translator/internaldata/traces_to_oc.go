@@ -1,4 +1,4 @@
-// Copyright 2019 OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -178,8 +178,9 @@ func spanKindToOCAttribute(kind pdata.SpanKind) *octrace.AttributeValue {
 		ocKind = tracetranslator.OpenTracingSpanKindConsumer
 	case pdata.SpanKindPRODUCER:
 		ocKind = tracetranslator.OpenTracingSpanKindProducer
-	case pdata.SpanKindUNSPECIFIED:
 	case pdata.SpanKindINTERNAL:
+		ocKind = tracetranslator.OpenTracingSpanKindInternal
+	case pdata.SpanKindUNSPECIFIED:
 	case pdata.SpanKindSERVER: // explicitly handled as SpanKind
 	case pdata.SpanKindCLIENT: // explicitly handled as SpanKind
 	default:

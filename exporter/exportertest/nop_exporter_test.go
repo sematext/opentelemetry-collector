@@ -1,4 +1,4 @@
-// Copyright 2019, OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -58,5 +58,12 @@ func TestNopMetricsExporter(t *testing.T) {
 	nme := NewNopMetricsExporter()
 	require.NoError(t, nme.Start(context.Background(), nil))
 	require.NoError(t, nme.ConsumeMetrics(context.Background(), pdatautil.MetricsFromInternalMetrics(data.NewMetricData())))
+	require.NoError(t, nme.Shutdown(context.Background()))
+}
+
+func TestNopLogsExporter(t *testing.T) {
+	nme := NewNopLogsExporter()
+	require.NoError(t, nme.Start(context.Background(), nil))
+	require.NoError(t, nme.ConsumeLogs(context.Background(), data.NewLogs()))
 	require.NoError(t, nme.Shutdown(context.Background()))
 }

@@ -1,4 +1,4 @@
-// Copyright 2020, OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -19,6 +19,13 @@ package pdh
 import "go.opentelemetry.io/collector/receiver/hostmetricsreceiver/internal/third_party/telegraf/win_perf_counters"
 
 const totalInstanceName = "_Total"
+
+type PerfCounterScraper interface {
+	// ScrapeData collects a measurement and returns the value(s).
+	ScrapeData() ([]win_perf_counters.CounterValue, error)
+	// Close all counters/handles related to the query and free all associated memory.
+	Close() error
+}
 
 type PerfCounter struct {
 	query  win_perf_counters.PerformanceQuery
@@ -56,12 +63,12 @@ func NewPerfCounter(counterPath string, collectOnStartup bool) (*PerfCounter, er
 	return counter, nil
 }
 
-// Close all counters/handles related to the query and free all associated memory.
+// Close
 func (pc *PerfCounter) Close() error {
 	return pc.query.Close()
 }
 
-// ScrapeData collects a measurement and returns the value(s).
+// ScrapeData
 func (pc *PerfCounter) ScrapeData() ([]win_perf_counters.CounterValue, error) {
 	err := pc.query.CollectData()
 	if err != nil {

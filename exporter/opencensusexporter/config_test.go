@@ -1,4 +1,4 @@
-// Copyright 2019, OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -24,6 +24,7 @@ import (
 	"go.opentelemetry.io/collector/config"
 	"go.opentelemetry.io/collector/config/configgrpc"
 	"go.opentelemetry.io/collector/config/configmodels"
+	"go.opentelemetry.io/collector/config/configtls"
 )
 
 func TestLoadConfig(t *testing.T) {
@@ -47,7 +48,7 @@ func TestLoadConfig(t *testing.T) {
 				NameVal: "opencensus/2",
 				TypeVal: "opencensus",
 			},
-			GRPCSettings: configgrpc.GRPCSettings{
+			GRPCClientSettings: configgrpc.GRPCClientSettings{
 				Headers: map[string]string{
 					"can you have a . here?": "F0000000-0000-0000-0000-000000000000",
 					"header1":                "234",
@@ -55,15 +56,19 @@ func TestLoadConfig(t *testing.T) {
 				},
 				Endpoint:    "1.2.3.4:1234",
 				Compression: "on",
-				TLSConfig: configgrpc.TLSConfig{
-					CaCert:    "/var/lib/mycert.pem",
-					UseSecure: true,
+				TLSSetting: configtls.TLSClientSetting{
+					TLSSetting: configtls.TLSSetting{
+						CAFile: "/var/lib/mycert.pem",
+					},
+					Insecure: false,
 				},
-				KeepaliveParameters: &configgrpc.KeepaliveConfig{
+				Keepalive: &configgrpc.KeepaliveClientConfig{
 					Time:                20,
 					PermitWithoutStream: true,
 					Timeout:             30,
 				},
+				WriteBufferSize: 512 * 1024,
+				BalancerName:    "round_robin",
 			},
 			NumWorkers:        123,
 			ReconnectionDelay: 15,

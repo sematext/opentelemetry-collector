@@ -1,4 +1,4 @@
-// Copyright 2020, OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -20,7 +20,6 @@ import (
 
 	"github.com/shirou/gopsutil/cpu"
 	"github.com/shirou/gopsutil/host"
-	"go.opencensus.io/trace"
 
 	"go.opentelemetry.io/collector/consumer/pdata"
 )
@@ -29,21 +28,25 @@ import (
 type scraper struct {
 	config    *Config
 	startTime pdata.TimestampUnixNano
+
+	// for mocking
+	bootTime func() (uint64, error)
+	times    func(bool) ([]cpu.TimesStat, error)
 }
 
 // newCPUScraper creates a set of CPU related metrics
 func newCPUScraper(_ context.Context, cfg *Config) *scraper {
-	return &scraper{config: cfg}
+	return &scraper{config: cfg, bootTime: host.BootTime, times: cpu.Times}
 }
 
 // Initialize
 func (s *scraper) Initialize(_ context.Context) error {
-	bootTime, err := host.BootTime()
+	bootTime, err := s.bootTime()
 	if err != nil {
 		return err
 	}
 
-	s.startTime = pdata.TimestampUnixNano(bootTime)
+	s.startTime = pdata.TimestampUnixNano(bootTime * 1e9)
 	return nil
 }
 
@@ -53,35 +56,32 @@ func (s *scraper) Close(_ context.Context) error {
 }
 
 // ScrapeMetrics
-func (s *scraper) ScrapeMetrics(ctx context.Context) (pdata.MetricSlice, error) {
-	_, span := trace.StartSpan(ctx, "cpuscraper.ScrapeMetrics")
-	defer span.End()
-
+func (s *scraper) ScrapeMetrics(_ context.Context) (pdata.MetricSlice, error) {
 	metrics := pdata.NewMetricSlice()
 
-	cpuTimes, err := cpu.Times(s.config.ReportPerCPU)
+	cpuTimes, err := s.times( /*percpu=*/ true)
 	if err != nil {
 		return metrics, err
 	}
 
 	metrics.Resize(1)
-	initializeCPUSecondsMetric(metrics.At(0), s.startTime, cpuTimes)
+	initializeCPUTimeMetric(metrics.At(0), s.startTime, cpuTimes)
 	return metrics, nil
 }
 
-func initializeCPUSecondsMetric(metric pdata.Metric, startTime pdata.TimestampUnixNano, cpuTimes []cpu.TimesStat) {
-	metricCPUSecondsDescriptor.CopyTo(metric.MetricDescriptor())
+func initializeCPUTimeMetric(metric pdata.Metric, startTime pdata.TimestampUnixNano, cpuTimes []cpu.TimesStat) {
+	cpuTimeDescriptor.CopyTo(metric.MetricDescriptor())
 
-	idps := metric.Int64DataPoints()
-	idps.Resize(len(cpuTimes) * cpuStatesLen)
+	ddps := metric.DoubleDataPoints()
+	ddps.Resize(len(cpuTimes) * cpuStatesLen)
 	for i, cpuTime := range cpuTimes {
-		appendCPUStateTimes(idps, i*cpuStatesLen, startTime, cpuTime)
+		appendCPUTimeStateDataPoints(ddps, i*cpuStatesLen, startTime, cpuTime)
 	}
 }
 
 const gopsCPUTotal string = "cpu-total"
 
-func initializeCPUSecondsDataPoint(dataPoint pdata.Int64DataPoint, startTime pdata.TimestampUnixNano, cpuLabel string, stateLabel string, value int64) {
+func initializeCPUTimeDataPoint(dataPoint pdata.DoubleDataPoint, startTime pdata.TimestampUnixNano, cpuLabel string, stateLabel string, value float64) {
 	labelsMap := dataPoint.LabelsMap()
 	// ignore cpu label if reporting "total" cpu usage
 	if cpuLabel != gopsCPUTotal {

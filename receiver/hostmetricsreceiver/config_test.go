@@ -1,4 +1,4 @@
-// Copyright 2020, OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -24,12 +24,17 @@ import (
 
 	"go.opentelemetry.io/collector/config"
 	"go.opentelemetry.io/collector/config/configmodels"
+	"go.opentelemetry.io/collector/internal/processor/filterset"
 	"go.opentelemetry.io/collector/receiver/hostmetricsreceiver/internal"
 	"go.opentelemetry.io/collector/receiver/hostmetricsreceiver/internal/scraper/cpuscraper"
 	"go.opentelemetry.io/collector/receiver/hostmetricsreceiver/internal/scraper/diskscraper"
 	"go.opentelemetry.io/collector/receiver/hostmetricsreceiver/internal/scraper/filesystemscraper"
+	"go.opentelemetry.io/collector/receiver/hostmetricsreceiver/internal/scraper/loadscraper"
 	"go.opentelemetry.io/collector/receiver/hostmetricsreceiver/internal/scraper/memoryscraper"
 	"go.opentelemetry.io/collector/receiver/hostmetricsreceiver/internal/scraper/networkscraper"
+	"go.opentelemetry.io/collector/receiver/hostmetricsreceiver/internal/scraper/processesscraper"
+	"go.opentelemetry.io/collector/receiver/hostmetricsreceiver/internal/scraper/processscraper"
+	"go.opentelemetry.io/collector/receiver/hostmetricsreceiver/internal/scraper/swapscraper"
 )
 
 func TestLoadConfig(t *testing.T) {
@@ -46,26 +51,59 @@ func TestLoadConfig(t *testing.T) {
 	assert.Equal(t, len(cfg.Receivers), 2)
 
 	r0 := cfg.Receivers["hostmetrics"]
-	defaultConfigAllScrapers := factory.CreateDefaultConfig()
-	defaultConfigAllScrapers.(*Config).Scrapers = map[string]internal.Config{
+	defaultConfigCPUScraper := factory.CreateDefaultConfig()
+	defaultConfigCPUScraper.(*Config).Scrapers = map[string]internal.Config{
 		cpuscraper.TypeStr: (&cpuscraper.Factory{}).CreateDefaultConfig(),
 	}
-	assert.Equal(t, r0, defaultConfigAllScrapers)
+
+	assert.Equal(t, defaultConfigCPUScraper, r0)
 
 	r1 := cfg.Receivers["hostmetrics/customname"].(*Config)
-	assert.Equal(t, r1,
-		&Config{
-			ReceiverSettings: configmodels.ReceiverSettings{
-				TypeVal: typeStr,
-				NameVal: "hostmetrics/customname",
+	expectedConfig := &Config{
+		ReceiverSettings: configmodels.ReceiverSettings{
+			TypeVal: typeStr,
+			NameVal: "hostmetrics/customname",
+		},
+		CollectionInterval: 30 * time.Second,
+		Scrapers: map[string]internal.Config{
+			cpuscraper.TypeStr:        &cpuscraper.Config{},
+			diskscraper.TypeStr:       &diskscraper.Config{},
+			loadscraper.TypeStr:       &loadscraper.Config{},
+			filesystemscraper.TypeStr: &filesystemscraper.Config{},
+			memoryscraper.TypeStr:     &memoryscraper.Config{},
+			networkscraper.TypeStr:    &networkscraper.Config{},
+			processesscraper.TypeStr:  &processesscraper.Config{},
+			swapscraper.TypeStr:       &swapscraper.Config{},
+			processscraper.TypeStr: &processscraper.Config{
+				Include: processscraper.MatchConfig{
+					Names:  []string{"test1", "test2"},
+					Config: filterset.Config{MatchType: "regexp"},
+				},
 			},
-			CollectionInterval: 30 * time.Second,
-			Scrapers: map[string]internal.Config{
-				cpuscraper.TypeStr:        &cpuscraper.Config{ReportPerCPU: true},
-				diskscraper.TypeStr:       &diskscraper.Config{},
-				filesystemscraper.TypeStr: &filesystemscraper.Config{},
-				memoryscraper.TypeStr:     &memoryscraper.Config{},
-				networkscraper.TypeStr:    &networkscraper.Config{},
-			},
-		})
+		},
+	}
+
+	assert.Equal(t, expectedConfig, r1)
+}
+
+func TestLoadInvalidConfig_NoScrapers(t *testing.T) {
+	factories, err := config.ExampleComponents()
+	require.NoError(t, err)
+
+	factory := NewFactory()
+	factories.Receivers[typeStr] = factory
+	_, err = config.LoadConfigFile(t, path.Join(".", "testdata", "config-noscrapers.yaml"), factories)
+
+	require.EqualError(t, err, "error reading settings for receiver type \"hostmetrics\": must specify at least one scraper when using hostmetrics receiver")
+}
+
+func TestLoadInvalidConfig_InvalidScraperKey(t *testing.T) {
+	factories, err := config.ExampleComponents()
+	require.NoError(t, err)
+
+	factory := NewFactory()
+	factories.Receivers[typeStr] = factory
+	_, err = config.LoadConfigFile(t, path.Join(".", "testdata", "config-invalidscraperkey.yaml"), factories)
+
+	require.EqualError(t, err, "error reading settings for receiver type \"hostmetrics\": invalid scraper key: invalidscraperkey")
 }

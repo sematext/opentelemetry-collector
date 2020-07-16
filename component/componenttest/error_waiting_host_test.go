@@ -1,4 +1,4 @@
-// Copyright 2019, OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -19,7 +19,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"go.opentelemetry.io/collector/component"
 )
 
 func TestNewErrorWaitingHost(t *testing.T) {
@@ -35,4 +38,13 @@ func TestNewErrorWaitingHost(t *testing.T) {
 
 	receivedError, _ = mh.WaitForFatalError(100 * time.Millisecond)
 	require.False(t, receivedError)
+}
+
+func TestNewErrorWaitingHost_Noop(t *testing.T) {
+	mh := NewErrorWaitingHost()
+	require.NotNil(t, mh)
+
+	assert.Nil(t, mh.GetExporters())
+	assert.Nil(t, mh.GetExtensions())
+	assert.Nil(t, mh.GetFactory(component.KindReceiver, "test"))
 }

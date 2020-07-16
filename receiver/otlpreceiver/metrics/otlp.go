@@ -1,4 +1,4 @@
-// Copyright 2020, OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,12 +17,11 @@ package metrics
 import (
 	"context"
 
-	collectormetrics "github.com/open-telemetry/opentelemetry-proto/gen/go/collector/metrics/v1"
-
-	"go.opentelemetry.io/collector/component/componenterror"
+	"go.opentelemetry.io/collector/client"
 	"go.opentelemetry.io/collector/consumer"
 	"go.opentelemetry.io/collector/consumer/pdatautil"
 	"go.opentelemetry.io/collector/internal/data"
+	collectormetrics "go.opentelemetry.io/collector/internal/data/opentelemetry-proto-gen/collector/metrics/v1"
 	"go.opentelemetry.io/collector/obsreport"
 )
 
@@ -37,15 +36,12 @@ type Receiver struct {
 }
 
 // New creates a new Receiver reference.
-func New(instanceName string, nextConsumer consumer.MetricsConsumer) (*Receiver, error) {
-	if nextConsumer == nil {
-		return nil, componenterror.ErrNilNextConsumer
-	}
+func New(instanceName string, nextConsumer consumer.MetricsConsumer) *Receiver {
 	r := &Receiver{
 		instanceName: instanceName,
 		nextConsumer: nextConsumer,
 	}
-	return r, nil
+	return r
 }
 
 const (
@@ -70,6 +66,10 @@ func (r *Receiver) sendToNextConsumer(ctx context.Context, md data.MetricData) e
 	metricCount, dataPointCount := md.MetricAndDataPointCount()
 	if metricCount == 0 {
 		return nil
+	}
+
+	if c, ok := client.FromGRPC(ctx); ok {
+		ctx = client.NewContext(ctx, c)
 	}
 
 	ctx = obsreport.StartMetricsReceiveOp(ctx, r.instanceName, receiverTransport)

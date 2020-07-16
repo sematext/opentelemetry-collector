@@ -1,4 +1,4 @@
-// Copyright 2019, OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,7 +15,6 @@
 package opencensusexporter
 
 import (
-	"crypto/x509"
 	"fmt"
 
 	"contrib.go.opencensus.io/exporter/ocagent"
@@ -50,8 +49,10 @@ func (f *Factory) CreateDefaultConfig() configmodels.Exporter {
 			TypeVal: typeStr,
 			NameVal: typeStr,
 		},
-		GRPCSettings: configgrpc.GRPCSettings{
+		GRPCClientSettings: configgrpc.GRPCClientSettings{
 			Headers: map[string]string{},
+			// We almost read 0 bytes, so no need to tune ReadBufferSize.
+			WriteBufferSize: 512 * 1024,
 		},
 	}
 }
@@ -74,6 +75,7 @@ func (f *Factory) OCAgentOptions(logger *zap.Logger, ocac *Config) ([]ocagent.Ex
 			msg:  "OpenCensus exporter config requires an Endpoint",
 		}
 	}
+	// TODO(ccaraman): Clean up this usage of gRPC settings apart of PR to address issue #933.
 	opts := []ocagent.ExporterOption{ocagent.WithAddress(ocac.Endpoint)}
 	if ocac.Compression != "" {
 		if compressionKey := configgrpc.GetGRPCCompressionKey(ocac.Compression); compressionKey != configgrpc.CompressionUnsupported {
@@ -85,25 +87,21 @@ func (f *Factory) OCAgentOptions(logger *zap.Logger, ocac *Config) ([]ocagent.Ex
 			}
 		}
 	}
-	if ocac.TLSConfig.CaCert != "" {
-		creds, err := credentials.NewClientTLSFromFile(ocac.TLSConfig.CaCert, "")
+	if ocac.TLSSetting.CAFile != "" {
+		creds, err := credentials.NewClientTLSFromFile(ocac.TLSSetting.CAFile, "")
 		if err != nil {
 			return nil, &ocExporterError{
 				code: errUnableToGetTLSCreds,
-				msg:  fmt.Sprintf("OpenCensus exporter unable to read TLS credentials from pem file %q: %v", ocac.TLSConfig.CaCert, err),
+				msg:  fmt.Sprintf("OpenCensus exporter unable to read TLS credentials from pem file %q: %v", ocac.TLSSetting.CAFile, err),
 			}
 		}
 		opts = append(opts, ocagent.WithTLSCredentials(creds))
-	} else if ocac.TLSConfig.UseSecure {
-		certPool, err := x509.SystemCertPool()
+	} else if !ocac.TLSSetting.Insecure {
+		tlsConf, err := ocac.TLSSetting.LoadTLSConfig()
 		if err != nil {
-			return nil, &ocExporterError{
-				code: errUnableToGetTLSCreds,
-				msg: fmt.Sprintf(
-					"OpenCensus exporter unable to read certificates from system pool: %v", err),
-			}
+			return nil, fmt.Errorf("OpenCensus exporter failed to load TLS config: %w", err)
 		}
-		creds := credentials.NewClientTLSFromCert(certPool, "")
+		creds := credentials.NewTLS(tlsConf)
 		opts = append(opts, ocagent.WithTLSCredentials(creds))
 	} else {
 		opts = append(opts, ocagent.WithInsecure())
@@ -114,11 +112,11 @@ func (f *Factory) OCAgentOptions(logger *zap.Logger, ocac *Config) ([]ocagent.Ex
 	if ocac.ReconnectionDelay > 0 {
 		opts = append(opts, ocagent.WithReconnectionPeriod(ocac.ReconnectionDelay))
 	}
-	if ocac.KeepaliveParameters != nil {
+	if ocac.Keepalive != nil {
 		opts = append(opts, ocagent.WithGRPCDialOption(grpc.WithKeepaliveParams(keepalive.ClientParameters{
-			Time:                ocac.KeepaliveParameters.Time,
-			Timeout:             ocac.KeepaliveParameters.Timeout,
-			PermitWithoutStream: ocac.KeepaliveParameters.PermitWithoutStream,
+			Time:                ocac.Keepalive.Time,
+			Timeout:             ocac.Keepalive.Timeout,
+			PermitWithoutStream: ocac.Keepalive.PermitWithoutStream,
 		})))
 	}
 	return opts, nil

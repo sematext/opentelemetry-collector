@@ -1,4 +1,4 @@
-// Copyright 2019, OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -19,7 +19,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"time"
 
 	resourcepb "github.com/census-instrumentation/opencensus-proto/gen-go/resource/v1"
 	zipkinmodel "github.com/openzipkin/zipkin-go/model"
@@ -27,7 +26,6 @@ import (
 	zipkinreporter "github.com/openzipkin/zipkin-go/reporter"
 
 	"go.opentelemetry.io/collector/component"
-	"go.opentelemetry.io/collector/config/configmodels"
 	"go.opentelemetry.io/collector/consumer/consumerdata"
 	"go.opentelemetry.io/collector/consumer/consumererror"
 	"go.opentelemetry.io/collector/exporter/exporterhelper"
@@ -42,30 +40,18 @@ import (
 type zipkinExporter struct {
 	defaultServiceName string
 
-	exportResourceLabels bool
-	url                  string
-	client               *http.Client
-	serializer           zipkinreporter.SpanSerializer
+	url        string
+	client     *http.Client
+	serializer zipkinreporter.SpanSerializer
 }
 
-// Default values for Zipkin endpoint.
-const (
-	defaultTimeout = time.Second * 5
-
-	defaultServiceName string = "<missing service name>"
-
-	DefaultExportResourceLabels = true
-)
-
-// NewTraceExporter creates an zipkin trace exporter.
-func NewTraceExporter(config configmodels.Exporter) (component.TraceExporterOld, error) {
+// newTraceExporter creates an zipkin trace exporter.
+func newTraceExporter(config *Config) (component.TraceExporterOld, error) {
 	ze, err := createZipkinExporter(config)
 	if err != nil {
 		return nil, err
 	}
-	zexp, err := exporterhelper.NewTraceExporterOld(
-		config,
-		ze.PushTraceData)
+	zexp, err := exporterhelper.NewTraceExporterOld(config, ze.PushTraceData)
 	if err != nil {
 		return nil, err
 	}
@@ -73,68 +59,56 @@ func NewTraceExporter(config configmodels.Exporter) (component.TraceExporterOld,
 	return zexp, nil
 }
 
-func createZipkinExporter(config configmodels.Exporter) (*zipkinExporter, error) {
-	zCfg := config.(*Config)
-
-	serviceName := defaultServiceName
-	if zCfg.DefaultServiceName != "" {
-		serviceName = zCfg.DefaultServiceName
-	}
-
-	exportResourceLabels := DefaultExportResourceLabels
-	if zCfg.ExportResourceLabels != nil {
-		exportResourceLabels = *zCfg.ExportResourceLabels
+func createZipkinExporter(cfg *Config) (*zipkinExporter, error) {
+	client, err := cfg.HTTPClientSettings.ToClient()
+	if err != nil {
+		return nil, err
 	}
 
 	ze := &zipkinExporter{
-		defaultServiceName:   serviceName,
-		exportResourceLabels: exportResourceLabels,
-		url:                  zCfg.URL,
-		client:               &http.Client{Timeout: defaultTimeout},
+		defaultServiceName: cfg.DefaultServiceName,
+		url:                cfg.Endpoint,
+		client:             client,
 	}
 
-	switch zCfg.Format {
+	switch cfg.Format {
 	case "json":
 		ze.serializer = zipkinreporter.JSONSerializer{}
 	case "proto":
 		ze.serializer = zipkinproto.SpanSerializer{}
 	default:
-		return nil, fmt.Errorf("%s is not one of json or proto", zCfg.Format)
+		return nil, fmt.Errorf("%s is not one of json or proto", cfg.Format)
 	}
 
 	return ze, nil
 }
 
-func (ze *zipkinExporter) PushTraceData(_ context.Context, td consumerdata.TraceData) (int, error) {
+func (ze *zipkinExporter) PushTraceData(ctx context.Context, td consumerdata.TraceData) (int, error) {
 	tbatch := make([]*zipkinmodel.SpanModel, 0, len(td.Spans))
-
-	var resource *resourcepb.Resource
-	if ze.exportResourceLabels {
-		resource = td.Resource
-	}
+	var resource *resourcepb.Resource = td.Resource
 
 	for _, span := range td.Spans {
 		zs, err := zipkin.OCSpanProtoToZipkin(td.Node, resource, span, ze.defaultServiceName)
 		if err != nil {
-			return len(td.Spans), consumererror.Permanent(err)
+			return len(td.Spans), consumererror.Permanent(fmt.Errorf("failed to push trace data via Zipkin exporter: %w", err))
 		}
 		tbatch = append(tbatch, zs)
 	}
 
 	body, err := ze.serializer.Serialize(tbatch)
 	if err != nil {
-		return len(td.Spans), err
+		return len(td.Spans), consumererror.Permanent(fmt.Errorf("failed to push trace data via Zipkin exporter: %w", err))
 	}
 
-	req, err := http.NewRequest("POST", ze.url, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, "POST", ze.url, bytes.NewReader(body))
 	if err != nil {
-		return len(td.Spans), err
+		return len(td.Spans), fmt.Errorf("failed to push trace data via Zipkin exporter: %w", err)
 	}
 	req.Header.Set("Content-Type", ze.serializer.ContentType())
 
 	resp, err := ze.client.Do(req)
 	if err != nil {
-		return len(td.Spans), err
+		return len(td.Spans), fmt.Errorf("failed to push trace data via Zipkin exporter: %w", err)
 	}
 	_ = resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {

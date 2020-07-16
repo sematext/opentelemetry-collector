@@ -1,4 +1,4 @@
-// Copyright 2019, OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -46,6 +46,15 @@ func TestCreateTraceExporter(t *testing.T) {
 	cfg := factory.CreateDefaultConfig()
 
 	te, err := factory.CreateTraceExporter(context.Background(), component.ExporterCreateParams{Logger: zap.NewNop()}, cfg)
+	assert.NoError(t, err)
+	assert.NotNil(t, te)
+}
+
+func TestCreateLogExporter(t *testing.T) {
+	factory := &Factory{}
+	cfg := factory.CreateDefaultConfig()
+
+	te, err := factory.CreateLogExporter(context.Background(), component.ExporterCreateParams{Logger: zap.NewNop()}, cfg)
 	assert.NoError(t, err)
 	assert.NotNil(t, te)
 }

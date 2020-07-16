@@ -1,4 +1,4 @@
-// Copyright 2019, OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -20,9 +20,10 @@ import (
 	"go.uber.org/zap"
 
 	"go.opentelemetry.io/collector/component"
+	"go.opentelemetry.io/collector/config/configgrpc"
 	"go.opentelemetry.io/collector/config/configmodels"
+	"go.opentelemetry.io/collector/config/confignet"
 	"go.opentelemetry.io/collector/consumer"
-	"go.opentelemetry.io/collector/receiver"
 )
 
 const (
@@ -47,15 +48,18 @@ func (f *Factory) CustomUnmarshaler() component.CustomUnmarshaler {
 // CreateDefaultConfig creates the default configuration for receiver.
 func (f *Factory) CreateDefaultConfig() configmodels.Receiver {
 	return &Config{
-		SecureReceiverSettings: receiver.SecureReceiverSettings{
-			ReceiverSettings: configmodels.ReceiverSettings{
-				TypeVal:  typeStr,
-				NameVal:  typeStr,
-				Endpoint: "localhost:55678",
-				// Disable: false - This receiver is enabled by default.
-			},
+		ReceiverSettings: configmodels.ReceiverSettings{
+			TypeVal: typeStr,
+			NameVal: typeStr,
 		},
-		Transport: "tcp",
+		GRPCServerSettings: configgrpc.GRPCServerSettings{
+			NetAddr: confignet.NetAddr{
+				Endpoint:  "0.0.0.0:55678",
+				Transport: "tcp",
+			},
+			// We almost write 0 bytes, so no need to tune WriteBufferSize.
+			ReadBufferSize: 512 * 1024,
+		},
 	}
 }
 
@@ -77,18 +81,14 @@ func (f *Factory) CreateTraceReceiver(
 }
 
 // CreateMetricsReceiver creates a metrics receiver based on provided config.
-func (f *Factory) CreateMetricsReceiver(
-	logger *zap.Logger,
-	cfg configmodels.Receiver,
-	consumer consumer.MetricsConsumerOld,
-) (component.MetricsReceiver, error) {
+func (f *Factory) CreateMetricsReceiver(ctx context.Context, logger *zap.Logger, cfg configmodels.Receiver, nextConsumer consumer.MetricsConsumerOld) (component.MetricsReceiver, error) {
 
 	r, err := f.createReceiver(cfg)
 	if err != nil {
 		return nil, err
 	}
 
-	r.metricsConsumer = consumer
+	r.metricsConsumer = nextConsumer
 
 	return r, nil
 }
@@ -110,7 +110,7 @@ func (f *Factory) createReceiver(cfg configmodels.Receiver) (*Receiver, error) {
 
 		// We don't have a receiver, so create one.
 		receiver, err = New(
-			rCfg.Name(), rCfg.Transport, rCfg.Endpoint, nil, nil, opts...)
+			rCfg.Name(), rCfg.NetAddr.Transport, rCfg.NetAddr.Endpoint, nil, nil, opts...)
 		if err != nil {
 			return nil, err
 		}

@@ -1,4 +1,4 @@
-// Copyright 2020 OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -20,8 +20,9 @@ package pdata
 import (
 	"testing"
 
-	otlpmetrics "github.com/open-telemetry/opentelemetry-proto/gen/go/metrics/v1"
 	"github.com/stretchr/testify/assert"
+
+	otlpmetrics "go.opentelemetry.io/collector/internal/data/opentelemetry-proto-gen/metrics/v1"
 )
 
 func TestResourceMetricsSlice(t *testing.T) {
@@ -123,6 +124,23 @@ func TestResourceMetricsSlice_Resize(t *testing.T) {
 	// Test Resize 0 elements.
 	es.Resize(0)
 	assert.EqualValues(t, NewResourceMetricsSlice(), es)
+}
+
+func TestResourceMetricsSlice_Append(t *testing.T) {
+	es := generateTestResourceMetricsSlice()
+	emptyVal := NewResourceMetrics()
+	emptyVal.InitEmpty()
+
+	es.Append(&emptyVal)
+	assert.EqualValues(t, *(es.At(7)).orig, *emptyVal.orig)
+
+	emptyVal2:= NewResourceMetrics()
+	emptyVal2.InitEmpty()
+
+	es.Append(&emptyVal2)
+	assert.EqualValues(t, *(es.At(8)).orig, *emptyVal2.orig)
+
+	assert.Equal(t, 9, es.Len())
 }
 
 func TestResourceMetrics_InitEmpty(t *testing.T) {
@@ -260,6 +278,23 @@ func TestInstrumentationLibraryMetricsSlice_Resize(t *testing.T) {
 	assert.EqualValues(t, NewInstrumentationLibraryMetricsSlice(), es)
 }
 
+func TestInstrumentationLibraryMetricsSlice_Append(t *testing.T) {
+	es := generateTestInstrumentationLibraryMetricsSlice()
+	emptyVal := NewInstrumentationLibraryMetrics()
+	emptyVal.InitEmpty()
+
+	es.Append(&emptyVal)
+	assert.EqualValues(t, *(es.At(7)).orig, *emptyVal.orig)
+
+	emptyVal2:= NewInstrumentationLibraryMetrics()
+	emptyVal2.InitEmpty()
+
+	es.Append(&emptyVal2)
+	assert.EqualValues(t, *(es.At(8)).orig, *emptyVal2.orig)
+
+	assert.Equal(t, 9, es.Len())
+}
+
 func TestInstrumentationLibraryMetrics_InitEmpty(t *testing.T) {
 	ms := NewInstrumentationLibraryMetrics()
 	assert.True(t, ms.IsNil())
@@ -395,6 +430,23 @@ func TestMetricSlice_Resize(t *testing.T) {
 	assert.EqualValues(t, NewMetricSlice(), es)
 }
 
+func TestMetricSlice_Append(t *testing.T) {
+	es := generateTestMetricSlice()
+	emptyVal := NewMetric()
+	emptyVal.InitEmpty()
+
+	es.Append(&emptyVal)
+	assert.EqualValues(t, *(es.At(7)).orig, *emptyVal.orig)
+
+	emptyVal2:= NewMetric()
+	emptyVal2.InitEmpty()
+
+	es.Append(&emptyVal2)
+	assert.EqualValues(t, *(es.At(8)).orig, *emptyVal2.orig)
+
+	assert.Equal(t, 9, es.Len())
+}
+
 func TestMetric_InitEmpty(t *testing.T) {
 	ms := NewMetric()
 	assert.True(t, ms.IsNil())
@@ -501,19 +553,10 @@ func TestMetricDescriptor_Unit(t *testing.T) {
 func TestMetricDescriptor_Type(t *testing.T) {
 	ms := NewMetricDescriptor()
 	ms.InitEmpty()
-	assert.EqualValues(t, MetricTypeUnspecified, ms.Type())
-	testValType := MetricTypeGaugeInt64
+	assert.EqualValues(t, MetricTypeInvalid, ms.Type())
+	testValType := MetricTypeInt64
 	ms.SetType(testValType)
 	assert.EqualValues(t, testValType, ms.Type())
-}
-
-func TestMetricDescriptor_LabelsMap(t *testing.T) {
-	ms := NewMetricDescriptor()
-	ms.InitEmpty()
-	assert.EqualValues(t, NewStringMap(), ms.LabelsMap())
-	fillTestStringMap(ms.LabelsMap())
-	testValLabelsMap := generateTestStringMap()
-	assert.EqualValues(t, testValLabelsMap, ms.LabelsMap())
 }
 
 func TestInt64DataPointSlice(t *testing.T) {
@@ -615,6 +658,23 @@ func TestInt64DataPointSlice_Resize(t *testing.T) {
 	// Test Resize 0 elements.
 	es.Resize(0)
 	assert.EqualValues(t, NewInt64DataPointSlice(), es)
+}
+
+func TestInt64DataPointSlice_Append(t *testing.T) {
+	es := generateTestInt64DataPointSlice()
+	emptyVal := NewInt64DataPoint()
+	emptyVal.InitEmpty()
+
+	es.Append(&emptyVal)
+	assert.EqualValues(t, *(es.At(7)).orig, *emptyVal.orig)
+
+	emptyVal2:= NewInt64DataPoint()
+	emptyVal2.InitEmpty()
+
+	es.Append(&emptyVal2)
+	assert.EqualValues(t, *(es.At(8)).orig, *emptyVal2.orig)
+
+	assert.Equal(t, 9, es.Len())
 }
 
 func TestInt64DataPoint_InitEmpty(t *testing.T) {
@@ -769,6 +829,23 @@ func TestDoubleDataPointSlice_Resize(t *testing.T) {
 	assert.EqualValues(t, NewDoubleDataPointSlice(), es)
 }
 
+func TestDoubleDataPointSlice_Append(t *testing.T) {
+	es := generateTestDoubleDataPointSlice()
+	emptyVal := NewDoubleDataPoint()
+	emptyVal.InitEmpty()
+
+	es.Append(&emptyVal)
+	assert.EqualValues(t, *(es.At(7)).orig, *emptyVal.orig)
+
+	emptyVal2:= NewDoubleDataPoint()
+	emptyVal2.InitEmpty()
+
+	es.Append(&emptyVal2)
+	assert.EqualValues(t, *(es.At(8)).orig, *emptyVal2.orig)
+
+	assert.Equal(t, 9, es.Len())
+}
+
 func TestDoubleDataPoint_InitEmpty(t *testing.T) {
 	ms := NewDoubleDataPoint()
 	assert.True(t, ms.IsNil())
@@ -919,6 +996,23 @@ func TestHistogramDataPointSlice_Resize(t *testing.T) {
 	// Test Resize 0 elements.
 	es.Resize(0)
 	assert.EqualValues(t, NewHistogramDataPointSlice(), es)
+}
+
+func TestHistogramDataPointSlice_Append(t *testing.T) {
+	es := generateTestHistogramDataPointSlice()
+	emptyVal := NewHistogramDataPoint()
+	emptyVal.InitEmpty()
+
+	es.Append(&emptyVal)
+	assert.EqualValues(t, *(es.At(7)).orig, *emptyVal.orig)
+
+	emptyVal2:= NewHistogramDataPoint()
+	emptyVal2.InitEmpty()
+
+	es.Append(&emptyVal2)
+	assert.EqualValues(t, *(es.At(8)).orig, *emptyVal2.orig)
+
+	assert.Equal(t, 9, es.Len())
 }
 
 func TestHistogramDataPoint_InitEmpty(t *testing.T) {
@@ -1100,6 +1194,23 @@ func TestHistogramBucketSlice_Resize(t *testing.T) {
 	assert.EqualValues(t, NewHistogramBucketSlice(), es)
 }
 
+func TestHistogramBucketSlice_Append(t *testing.T) {
+	es := generateTestHistogramBucketSlice()
+	emptyVal := NewHistogramBucket()
+	emptyVal.InitEmpty()
+
+	es.Append(&emptyVal)
+	assert.EqualValues(t, *(es.At(7)).orig, *emptyVal.orig)
+
+	emptyVal2:= NewHistogramBucket()
+	emptyVal2.InitEmpty()
+
+	es.Append(&emptyVal2)
+	assert.EqualValues(t, *(es.At(8)).orig, *emptyVal2.orig)
+
+	assert.Equal(t, 9, es.Len())
+}
+
 func TestHistogramBucket_InitEmpty(t *testing.T) {
 	ms := NewHistogramBucket()
 	assert.True(t, ms.IsNil())
@@ -1277,6 +1388,23 @@ func TestSummaryDataPointSlice_Resize(t *testing.T) {
 	assert.EqualValues(t, NewSummaryDataPointSlice(), es)
 }
 
+func TestSummaryDataPointSlice_Append(t *testing.T) {
+	es := generateTestSummaryDataPointSlice()
+	emptyVal := NewSummaryDataPoint()
+	emptyVal.InitEmpty()
+
+	es.Append(&emptyVal)
+	assert.EqualValues(t, *(es.At(7)).orig, *emptyVal.orig)
+
+	emptyVal2:= NewSummaryDataPoint()
+	emptyVal2.InitEmpty()
+
+	es.Append(&emptyVal2)
+	assert.EqualValues(t, *(es.At(8)).orig, *emptyVal2.orig)
+
+	assert.Equal(t, 9, es.Len())
+}
+
 func TestSummaryDataPoint_InitEmpty(t *testing.T) {
 	ms := NewSummaryDataPoint()
 	assert.True(t, ms.IsNil())
@@ -1447,6 +1575,23 @@ func TestSummaryValueAtPercentileSlice_Resize(t *testing.T) {
 	assert.EqualValues(t, NewSummaryValueAtPercentileSlice(), es)
 }
 
+func TestSummaryValueAtPercentileSlice_Append(t *testing.T) {
+	es := generateTestSummaryValueAtPercentileSlice()
+	emptyVal := NewSummaryValueAtPercentile()
+	emptyVal.InitEmpty()
+
+	es.Append(&emptyVal)
+	assert.EqualValues(t, *(es.At(7)).orig, *emptyVal.orig)
+
+	emptyVal2:= NewSummaryValueAtPercentile()
+	emptyVal2.InitEmpty()
+
+	es.Append(&emptyVal2)
+	assert.EqualValues(t, *(es.At(8)).orig, *emptyVal2.orig)
+
+	assert.Equal(t, 9, es.Len())
+}
+
 func TestSummaryValueAtPercentile_InitEmpty(t *testing.T) {
 	ms := NewSummaryValueAtPercentile()
 	assert.True(t, ms.IsNil())
@@ -1572,8 +1717,7 @@ func fillTestMetricDescriptor(tv MetricDescriptor) {
 	tv.SetName("test_name")
 	tv.SetDescription("test_description")
 	tv.SetUnit("1")
-	tv.SetType(MetricTypeGaugeInt64)
-	fillTestStringMap(tv.LabelsMap())
+	tv.SetType(MetricTypeInt64)
 }
 
 func generateTestInt64DataPointSlice() Int64DataPointSlice {

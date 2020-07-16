@@ -1,4 +1,4 @@
-// Copyright 2020, OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -26,7 +26,6 @@ func TestCreateDefaultConfig(t *testing.T) {
 	factory := &Factory{}
 	cfg := factory.CreateDefaultConfig()
 	assert.IsType(t, &Config{}, cfg)
-	assert.Equal(t, false, cfg.(*Config).ReportPerCPU)
 }
 
 func TestCreateMetricsScraper(t *testing.T) {

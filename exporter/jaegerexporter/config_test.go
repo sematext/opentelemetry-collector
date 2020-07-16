@@ -1,4 +1,4 @@
-// Copyright 2019, OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -25,6 +25,7 @@ import (
 
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/config"
+	"go.opentelemetry.io/collector/config/configtls"
 )
 
 func TestLoadConfig(t *testing.T) {
@@ -43,12 +44,16 @@ func TestLoadConfig(t *testing.T) {
 	// Endpoint doesn't have a default value so set it directly.
 	defaultCfg := factory.CreateDefaultConfig().(*Config)
 	defaultCfg.Endpoint = "some.target:55678"
-	defaultCfg.GRPCSettings.Endpoint = defaultCfg.Endpoint
+	defaultCfg.GRPCClientSettings.Endpoint = defaultCfg.Endpoint
+	defaultCfg.GRPCClientSettings.TLSSetting = configtls.TLSClientSetting{
+		Insecure: true,
+	}
 	assert.Equal(t, defaultCfg, e0)
 
 	e1 := cfg.Exporters["jaeger/2"]
 	assert.Equal(t, "jaeger/2", e1.(*Config).Name())
 	assert.Equal(t, "a.new.target:1234", e1.(*Config).Endpoint)
+	assert.Equal(t, "round_robin", e1.(*Config).GRPCClientSettings.BalancerName)
 	params := component.ExporterCreateParams{Logger: zap.NewNop()}
 	te, err := factory.CreateTraceExporter(context.Background(), params, e1)
 	require.NoError(t, err)

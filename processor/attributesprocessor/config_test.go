@@ -1,4 +1,4 @@
-// Copyright 2019, OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -23,6 +23,8 @@ import (
 
 	"go.opentelemetry.io/collector/config"
 	"go.opentelemetry.io/collector/config/configmodels"
+	"go.opentelemetry.io/collector/internal/processor/attraction"
+	"go.opentelemetry.io/collector/internal/processor/filterset"
 	"go.opentelemetry.io/collector/internal/processor/filterspan"
 )
 
@@ -30,73 +32,82 @@ func TestLoadingConifg(t *testing.T) {
 	factories, err := config.ExampleComponents()
 	assert.NoError(t, err)
 
-	factory := &Factory{}
+	factory := NewFactory()
 	factories.Processors[typeStr] = factory
-	config, err := config.LoadConfigFile(t, path.Join(".", "testdata", "config.yaml"), factories)
-
+	cfg, err := config.LoadConfigFile(t, path.Join(".", "testdata", "config.yaml"), factories)
 	assert.NoError(t, err)
-	require.NotNil(t, config)
+	require.NotNil(t, cfg)
 
-	p0 := config.Processors["attributes/insert"]
+	p0 := cfg.Processors["attributes/insert"]
 	assert.Equal(t, p0, &Config{
 		ProcessorSettings: configmodels.ProcessorSettings{
 			NameVal: "attributes/insert",
 			TypeVal: typeStr,
 		},
-		Actions: []ActionKeyValue{
-			{Key: "attribute1", Value: 123, Action: INSERT},
-			{Key: "string key", FromAttribute: "anotherkey", Action: INSERT},
+		Settings: attraction.Settings{
+			Actions: []attraction.ActionKeyValue{
+				{Key: "attribute1", Value: 123, Action: attraction.INSERT},
+				{Key: "string key", FromAttribute: "anotherkey", Action: attraction.INSERT},
+			},
 		},
 	})
 
-	p1 := config.Processors["attributes/update"]
+	p1 := cfg.Processors["attributes/update"]
 	assert.Equal(t, p1, &Config{
 		ProcessorSettings: configmodels.ProcessorSettings{
 			NameVal: "attributes/update",
 			TypeVal: typeStr,
 		},
-		Actions: []ActionKeyValue{
-			{Key: "boo", FromAttribute: "foo", Action: UPDATE},
-			{Key: "db.secret", Value: "redacted", Action: UPDATE},
+		Settings: attraction.Settings{
+			Actions: []attraction.ActionKeyValue{
+				{Key: "boo", FromAttribute: "foo", Action: attraction.UPDATE},
+				{Key: "db.secret", Value: "redacted", Action: attraction.UPDATE},
+			},
 		},
 	})
 
-	p2 := config.Processors["attributes/upsert"]
+	p2 := cfg.Processors["attributes/upsert"]
 	assert.Equal(t, p2, &Config{
 		ProcessorSettings: configmodels.ProcessorSettings{
 			NameVal: "attributes/upsert",
 			TypeVal: typeStr,
 		},
-		Actions: []ActionKeyValue{
-			{Key: "region", Value: "planet-earth", Action: UPSERT},
-			{Key: "new_user_key", FromAttribute: "user_key", Action: UPSERT},
+		Settings: attraction.Settings{
+			Actions: []attraction.ActionKeyValue{
+				{Key: "region", Value: "planet-earth", Action: attraction.UPSERT},
+				{Key: "new_user_key", FromAttribute: "user_key", Action: attraction.UPSERT},
+			},
 		},
 	})
 
-	p3 := config.Processors["attributes/delete"]
+	p3 := cfg.Processors["attributes/delete"]
 	assert.Equal(t, p3, &Config{
 		ProcessorSettings: configmodels.ProcessorSettings{
 			NameVal: "attributes/delete",
 			TypeVal: typeStr,
 		},
-		Actions: []ActionKeyValue{
-			{Key: "credit_card", Action: DELETE},
-			{Key: "duplicate_key", Action: DELETE},
+		Settings: attraction.Settings{
+			Actions: []attraction.ActionKeyValue{
+				{Key: "credit_card", Action: attraction.DELETE},
+				{Key: "duplicate_key", Action: attraction.DELETE},
+			},
 		},
 	})
 
-	p4 := config.Processors["attributes/hash"]
+	p4 := cfg.Processors["attributes/hash"]
 	assert.Equal(t, p4, &Config{
 		ProcessorSettings: configmodels.ProcessorSettings{
 			NameVal: "attributes/hash",
 			TypeVal: typeStr,
 		},
-		Actions: []ActionKeyValue{
-			{Key: "user.email", Action: HASH},
+		Settings: attraction.Settings{
+			Actions: []attraction.ActionKeyValue{
+				{Key: "user.email", Action: attraction.HASH},
+			},
 		},
 	})
 
-	p5 := config.Processors["attributes/excludemulti"]
+	p5 := cfg.Processors["attributes/excludemulti"]
 	assert.Equal(t, p5, &Config{
 		ProcessorSettings: configmodels.ProcessorSettings{
 			NameVal: "attributes/excludemulti",
@@ -104,21 +115,23 @@ func TestLoadingConifg(t *testing.T) {
 		},
 		MatchConfig: filterspan.MatchConfig{
 			Exclude: &filterspan.MatchProperties{
-				MatchType: filterspan.MatchTypeStrict,
-				Services:  []string{"svcA", "svcB"},
+				Config:   *createConfig(filterset.Strict),
+				Services: []string{"svcA", "svcB"},
 				Attributes: []filterspan.Attribute{
 					{Key: "env", Value: "dev"},
 					{Key: "test_request"},
 				},
 			},
 		},
-		Actions: []ActionKeyValue{
-			{Key: "credit_card", Action: DELETE},
-			{Key: "duplicate_key", Action: DELETE},
+		Settings: attraction.Settings{
+			Actions: []attraction.ActionKeyValue{
+				{Key: "credit_card", Action: attraction.DELETE},
+				{Key: "duplicate_key", Action: attraction.DELETE},
+			},
 		},
 	})
 
-	p6 := config.Processors["attributes/includeservices"]
+	p6 := cfg.Processors["attributes/includeservices"]
 	assert.Equal(t, p6, &Config{
 		ProcessorSettings: configmodels.ProcessorSettings{
 			NameVal: "attributes/includeservices",
@@ -126,17 +139,19 @@ func TestLoadingConifg(t *testing.T) {
 		},
 		MatchConfig: filterspan.MatchConfig{
 			Include: &filterspan.MatchProperties{
-				MatchType: filterspan.MatchTypeRegexp,
-				Services:  []string{"auth.*", "login.*"},
+				Config:   *createConfig(filterset.Regexp),
+				Services: []string{"auth.*", "login.*"},
 			},
 		},
-		Actions: []ActionKeyValue{
-			{Key: "credit_card", Action: DELETE},
-			{Key: "duplicate_key", Action: DELETE},
+		Settings: attraction.Settings{
+			Actions: []attraction.ActionKeyValue{
+				{Key: "credit_card", Action: attraction.DELETE},
+				{Key: "duplicate_key", Action: attraction.DELETE},
+			},
 		},
 	})
 
-	p7 := config.Processors["attributes/selectiveprocessing"]
+	p7 := cfg.Processors["attributes/selectiveprocessing"]
 	assert.Equal(t, p7, &Config{
 		ProcessorSettings: configmodels.ProcessorSettings{
 			NameVal: "attributes/selectiveprocessing",
@@ -144,51 +159,57 @@ func TestLoadingConifg(t *testing.T) {
 		},
 		MatchConfig: filterspan.MatchConfig{
 			Include: &filterspan.MatchProperties{
-				MatchType: filterspan.MatchTypeStrict,
-				Services:  []string{"svcA", "svcB"},
+				Config:   *createConfig(filterset.Strict),
+				Services: []string{"svcA", "svcB"},
 			},
 			Exclude: &filterspan.MatchProperties{
-				MatchType: filterspan.MatchTypeStrict,
+				Config: *createConfig(filterset.Strict),
 				Attributes: []filterspan.Attribute{
 					{Key: "redact_trace", Value: false},
 				},
 			},
 		},
-		Actions: []ActionKeyValue{
-			{Key: "credit_card", Action: DELETE},
-			{Key: "duplicate_key", Action: DELETE},
+		Settings: attraction.Settings{
+			Actions: []attraction.ActionKeyValue{
+				{Key: "credit_card", Action: attraction.DELETE},
+				{Key: "duplicate_key", Action: attraction.DELETE},
+			},
 		},
 	})
 
-	p8 := config.Processors["attributes/complex"]
+	p8 := cfg.Processors["attributes/complex"]
 	assert.Equal(t, p8, &Config{
 		ProcessorSettings: configmodels.ProcessorSettings{
 			NameVal: "attributes/complex",
 			TypeVal: typeStr,
 		},
-		Actions: []ActionKeyValue{
-			{Key: "operation", Value: "default", Action: INSERT},
-			{Key: "svc.operation", FromAttribute: "operation", Action: UPSERT},
-			{Key: "operation", Action: DELETE},
+		Settings: attraction.Settings{
+			Actions: []attraction.ActionKeyValue{
+				{Key: "operation", Value: "default", Action: attraction.INSERT},
+				{Key: "svc.operation", FromAttribute: "operation", Action: attraction.UPSERT},
+				{Key: "operation", Action: attraction.DELETE},
+			},
 		},
 	})
 
-	p9 := config.Processors["attributes/example"]
+	p9 := cfg.Processors["attributes/example"]
 	assert.Equal(t, p9, &Config{
 		ProcessorSettings: configmodels.ProcessorSettings{
 			NameVal: "attributes/example",
 			TypeVal: typeStr,
 		},
-		Actions: []ActionKeyValue{
-			{Key: "db.table", Action: DELETE},
-			{Key: "redacted_span", Value: true, Action: UPSERT},
-			{Key: "copy_key", FromAttribute: "key_original", Action: UPDATE},
-			{Key: "account_id", Value: 2245, Action: INSERT},
-			{Key: "account_password", Action: DELETE},
+		Settings: attraction.Settings{
+			Actions: []attraction.ActionKeyValue{
+				{Key: "db.table", Action: attraction.DELETE},
+				{Key: "redacted_span", Value: true, Action: attraction.UPSERT},
+				{Key: "copy_key", FromAttribute: "key_original", Action: attraction.UPDATE},
+				{Key: "account_id", Value: 2245, Action: attraction.INSERT},
+				{Key: "account_password", Action: attraction.DELETE},
+			},
 		},
 	})
 
-	p10 := config.Processors["attributes/regexp"]
+	p10 := cfg.Processors["attributes/regexp"]
 	assert.Equal(t, p10, &Config{
 		ProcessorSettings: configmodels.ProcessorSettings{
 			NameVal: "attributes/regexp",
@@ -196,17 +217,19 @@ func TestLoadingConifg(t *testing.T) {
 		},
 		MatchConfig: filterspan.MatchConfig{
 			Include: &filterspan.MatchProperties{
-				MatchType: filterspan.MatchTypeRegexp,
-				Services:  []string{"auth.*"},
+				Config:   *createConfig(filterset.Regexp),
+				Services: []string{"auth.*"},
 			},
 			Exclude: &filterspan.MatchProperties{
-				MatchType: filterspan.MatchTypeRegexp,
+				Config:    *createConfig(filterset.Regexp),
 				SpanNames: []string{"login.*"},
 			},
 		},
-		Actions: []ActionKeyValue{
-			{Key: "password", Action: UPDATE, Value: "obfuscated"},
-			{Key: "token", Action: DELETE},
+		Settings: attraction.Settings{
+			Actions: []attraction.ActionKeyValue{
+				{Key: "password", Action: attraction.UPDATE, Value: "obfuscated"},
+				{Key: "token", Action: attraction.DELETE},
+			},
 		},
 	})
 
