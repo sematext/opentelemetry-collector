@@ -1,4 +1,4 @@
-// Copyright 2019, OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -38,29 +38,64 @@ func TestCreateMetricsExporter(t *testing.T) {
 	cfg := factory.CreateDefaultConfig()
 
 	params := component.ExporterCreateParams{Logger: zap.NewNop()}
+	_, err := factory.CreateMetricsExporter(context.Background(), params, cfg) // TODO pass logger in params
+	assert.Error(t, err, configerror.ErrDataTypeIsNotSupported)
+}
+
+func TestCreateLogsExporter(t *testing.T) {
+	factory := Factory{}
+	cfg := factory.CreateDefaultConfig()
+
+	params := component.ExporterCreateParams{Logger: zap.NewNop()}
 	_, err := factory.CreateMetricsExporter(context.Background(), params, cfg)
 	assert.Error(t, err, configerror.ErrDataTypeIsNotSupported)
 }
 
-func TestCreateInstanceViaFactory(t *testing.T) {
+func TestCreateMetricsInstanceViaFactory(t *testing.T) {
 	factory := Factory{}
 
 	cfg := factory.CreateDefaultConfig()
 
-	// Default config doesn't have default endpoint so creating from it should
-	// fail.
+	// Default config doesn't have default endpoint so creating from it should fail.
 	params := component.ExporterCreateParams{Logger: zap.NewNop()}
-	exp, err := factory.CreateTraceExporter(context.Background(), params, cfg)
+	exp, err := factory.CreateMetricsExporter(context.Background(), params, cfg)
+
 	assert.NotNil(t, err)
-	assert.Equal(t, "\"sematext\" config requires a non-empty \"endpoint\"", err.Error())
+	assert.Equal(t, "\"sematext\" config requires a non-empty \"endpoint\"", err.Error()) // TODO adjust test
 	assert.Nil(t, exp)
 
 	// Endpoint doesn't have a default value so set it directly.
 	expCfg := cfg.(*Config)
-	expCfg.Endpoint = "some.target.org:12345"
-	exp, err = factory.CreateTraceExporter(context.Background(), params, cfg)
+	expCfg.MetricsConduitSettings.Endpoint = "some.target.org:12345"
+	exp, err = factory.CreateMetricsExporter(context.Background(), params, cfg)
 	assert.NoError(t, err)
 	assert.NotNil(t, exp)
+
+	// TODO - Other tests
+
+	assert.NoError(t, exp.Shutdown(context.Background()))
+}
+
+func TestCreateLogsInstanceViaFactory(t *testing.T) {
+	factory := Factory{}
+
+	cfg := factory.CreateDefaultConfig()
+
+	// Default config doesn't have default endpoint so creating from it should fail.
+	params := component.ExporterCreateParams{Logger: zap.NewNop()}
+	exp, err := factory.CreateLogsExporter(context.Background(), params, cfg)
+	assert.NotNil(t, err)
+	assert.Equal(t, "\"sematext\" config requires a non-empty \"endpoint\"", err.Error()) // TODO adjust test
+	assert.Nil(t, exp)
+
+	// Endpoint doesn't have a default value so set it directly.
+	expCfg := cfg.(*Config)
+	expCfg.LogsConduitSettings.Endpoint = "some.target.org:12345"
+	exp, err = factory.CreateLogsExporter(context.Background(), params, cfg)
+	assert.NoError(t, err)
+	assert.NotNil(t, exp)
+
+	// TODO - Other tests
 
 	assert.NoError(t, exp.Shutdown(context.Background()))
 }

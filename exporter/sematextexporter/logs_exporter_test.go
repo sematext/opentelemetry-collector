@@ -15,36 +15,27 @@
 package sematextexporter
 
 import (
-	"path"
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
 
-	"go.opentelemetry.io/collector/config"
 	"go.opentelemetry.io/collector/config/configmodels"
+	"go.opentelemetry.io/collector/internal/data/testdata"
 )
 
-func TestLoadConfig(t *testing.T) {
-	factories, err := config.ExampleComponents()
+func TestLoggingLogExporterNoErrors(t *testing.T) {
+	lle, err := NewLogsExporter(configmodels.ExporterSettings{}, "debug", zap.NewNop())
+	require.NotNil(t, lle)
 	assert.NoError(t, err)
 
-	factory := &Factory{}
-	factories.Exporters[typeStr] = factory
-	cfg, err := config.LoadConfigFile(t, path.Join(".", "testdata", "config.yaml"), factories)
+	assert.NoError(t, lle.ConsumeLogs(context.Background(), testdata.GenerateLogDataEmpty()))
+	assert.NoError(t, lle.ConsumeLogs(context.Background(), testdata.GenerateLogDataOneEmptyResourceLogs()))
+	assert.NoError(t, lle.ConsumeLogs(context.Background(), testdata.GenerateLogDataOneEmptyOneNilResourceLogs()))
+	assert.NoError(t, lle.ConsumeLogs(context.Background(), testdata.GenerateLogDataNoLogRecords()))
+	assert.NoError(t, lle.ConsumeLogs(context.Background(), testdata.GenerateLogDataOneEmptyLogs()))
 
-	require.NoError(t, err)
-	require.NotNil(t, cfg)
-
-	e0 := cfg.Exporters["sematext"]
-	assert.Equal(t, e0, factory.CreateDefaultConfig())
-
-	e1 := cfg.Exporters["sematext/2"]
-	assert.Equal(t, e1,
-		&Config{
-			ExporterSettings: configmodels.ExporterSettings{
-				NameVal: "sematext",
-				TypeVal: "sematext",
-			},
-		})
+	assert.NoError(t, lle.Shutdown(context.Background()))
 }

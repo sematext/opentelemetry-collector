@@ -15,17 +15,19 @@
 package sematextexporter
 
 import (
+	"context"
 	"path"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
 
+	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/config"
-	"go.opentelemetry.io/collector/config/configmodels"
 )
 
-func TestLoadConfig(t *testing.T) {
+func TestLoadLogsConfig(t *testing.T) {
 	factories, err := config.ExampleComponents()
 	assert.NoError(t, err)
 
@@ -37,14 +39,16 @@ func TestLoadConfig(t *testing.T) {
 	require.NotNil(t, cfg)
 
 	e0 := cfg.Exporters["sematext"]
-	assert.Equal(t, e0, factory.CreateDefaultConfig())
 
-	e1 := cfg.Exporters["sematext/2"]
-	assert.Equal(t, e1,
-		&Config{
-			ExporterSettings: configmodels.ExporterSettings{
-				NameVal: "sematext",
-				TypeVal: "sematext",
-			},
-		})
+	// Endpoint doesn't have a default value so set it directly.
+	defaultCfg := factory.CreateDefaultConfig().(*Config)
+	assert.Equal(t, defaultCfg, e0) // TODO - adjust test
+
+	e1 := cfg.Exporters["sematext"]
+	assert.Equal(t, "sematext/2", e1.(*Config).Name())
+	assert.Equal(t, "a.new.target:1234", e1.(*Config).LogsConduitSettings.Endpoint) // TODO - adjust test
+	params := component.ExporterCreateParams{Logger: zap.NewNop()}
+	te, err := factory.CreateLogsExporter(context.Background(), params, e1)
+	require.NoError(t, err)
+	require.NotNil(t, te)
 }

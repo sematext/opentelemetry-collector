@@ -5,14 +5,43 @@ processors:
   exampleprocessor:
 
 exporters:
-  jaeger:
-    endpoint: "some.target:55678"
-  jaeger/2:
-    endpoint: "a.new.target:1234"
+  sematext:
+  sematext/2:
+    loglevel: debug
+    sampling_initial: 10
+    sampling_thereafter: 50
 
 service:
   pipelines:
     traces:
+      receivers: [examplereceiver]
+      processors: [exampleprocessor]
+      exporters: [logging]
+    metrics:
+      receivers: [examplereceiver]
+      exporters: [logging, logging/2]
+
+
+
+receivers:
+  examplereceiver:
+
+processors:
+  exampleprocessor:
+
+exporters:
+  sematext:
+  sematext/2:
+
+
+
+service:
+  pipelines:
+    metrics:
+      receivers: [examplereceiver]
+      processors: [exampleprocessor]
+      exporters: [sematext]
+    logs:
       receivers: [examplereceiver]
       processors: [exampleprocessor]
       exporters: [sematext]

@@ -1,4 +1,4 @@
-// Copyright 2019, OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,11 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+/**
+-- TODO
+
+- traces : nedim traces : jaeger
+
+- metrics : boyan metrics ingesttion infra. influx line protocol influxdb
+
+- logs : pavel or rafal : https://sematext.com/docs/logs/index-events-via-elasticsearch-api/
+
+https://github.com/influxdata/influxdb-client-go
+
+//----------------------------------------------------------------------------------------------------------------------
+
+*/
+
 package sematextexporter
 
 import (
 	"context"
-	"fmt"
 
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/config/configmodels"
@@ -27,7 +41,7 @@ const (
 	typeStr = "sematext"
 )
 
-// Factory is the factory for Jaeger gRPC exporter.
+// Factory is the factory for Sematext exporter.
 type Factory struct {
 }
 
@@ -38,33 +52,20 @@ func (f *Factory) Type() configmodels.Type {
 
 // CreateDefaultConfig creates the default configuration for exporter.
 func (f *Factory) CreateDefaultConfig() configmodels.Exporter {
-	return &Config{
+
+	config := &Config{
 		ExporterSettings: configmodels.ExporterSettings{
 			TypeVal: typeStr,
 			NameVal: typeStr,
 		},
-	}
-}
-
-// CreateTraceExporter creates a trace exporter based on this config.
-func (f *Factory) CreateTraceExporter(
-	_ context.Context,
-	_ component.ExporterCreateParams,
-	config configmodels.Exporter,
-) (component.TraceExporter, error) {
-
-	expCfg := config.(*Config)
-	if expCfg.Endpoint == "" {
-		err := fmt.Errorf("%q config requires a non-empty \"endpoint\"", expCfg.Name())
-		return nil, err
+		MetricsConduitSettings: MetricsConfig{}, //TODO only if present in yaml
+		LogsConduitSettings:    LogsConfig{},    //TODO only if present in yaml
 	}
 
-	exp, err := New(expCfg)
-	if err != nil {
-		return nil, err
-	}
+	config.MetricsConduitSettings.MetricsConfigSetDefaults()
+	config.LogsConduitSettings.LogsConfigSetDefaults()
 
-	return exp, nil
+	return config
 }
 
 // CreateMetricsExporter creates a metrics exporter based on this config.
@@ -74,16 +75,30 @@ func (f *Factory) CreateMetricsExporter(
 	config configmodels.Exporter,
 ) (component.MetricsExporter, error) {
 
-	expCfg := config.(*Config)
-	if expCfg.Endpoint == "" {
-		// TODO: Improve error message, see #215
-		err := fmt.Errorf(
-			"%q config requires a non-empty \"endpoint\"",
-			expCfg.Name())
+	cfg := config.(*Config)
+
+	// TODO cfg checks
+
+	exp, err := NewMetricsExporter(cfg)
+	if err != nil {
 		return nil, err
 	}
 
-	exp, err := New(expCfg)
+	return exp, nil
+}
+
+// CreateLogsExporter creates a metrics exporter based on this config.
+func (f *Factory) CreateLogsExporter(
+	ctx context.Context,
+	params component.ExporterCreateParams,
+	config configmodels.Exporter,
+) (component.LogExporter, error) {
+
+	cfg := config.(*Config)
+
+	// TODO cfg checks
+
+	exp, err := NewLogsExporter(cfg)
 	if err != nil {
 		return nil, err
 	}
