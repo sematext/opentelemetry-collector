@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//       http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -22,21 +22,22 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"go.opentelemetry.io/collector/config"
+	"go.opentelemetry.io/collector/component/componenttest"
 	"go.opentelemetry.io/collector/config/configgrpc"
 	"go.opentelemetry.io/collector/config/confighttp"
 	"go.opentelemetry.io/collector/config/configmodels"
 	"go.opentelemetry.io/collector/config/confignet"
+	"go.opentelemetry.io/collector/config/configtest"
 	"go.opentelemetry.io/collector/config/configtls"
 )
 
 func TestLoadConfig(t *testing.T) {
-	factories, err := config.ExampleComponents()
+	factories, err := componenttest.ExampleComponents()
 	assert.NoError(t, err)
 
 	factory := NewFactory()
 	factories.Receivers[typeStr] = factory
-	cfg, err := config.LoadConfigFile(t, path.Join(".", "testdata", "config.yaml"), factories)
+	cfg, err := configtest.LoadConfigFile(t, path.Join(".", "testdata", "config.yaml"), factories)
 
 	require.NoError(t, err)
 	require.NotNil(t, cfg)
@@ -198,20 +199,20 @@ func TestLoadConfig(t *testing.T) {
 }
 
 func TestFailedLoadConfig(t *testing.T) {
-	factories, err := config.ExampleComponents()
+	factories, err := componenttest.ExampleComponents()
 	assert.NoError(t, err)
 
 	factory := NewFactory()
 	factories.Receivers[typeStr] = factory
-	_, err = config.LoadConfigFile(t, path.Join(".", "testdata", "typo_default_proto_config.yaml"), factories)
-	assert.EqualError(t, err, `error reading settings for receiver type "otlp": unknown protocols in the OTLP receiver`)
+	_, err = configtest.LoadConfigFile(t, path.Join(".", "testdata", "typo_default_proto_config.yaml"), factories)
+	assert.EqualError(t, err, `error reading receivers configuration for otlp: unknown protocols in the OTLP receiver`)
 
-	_, err = config.LoadConfigFile(t, path.Join(".", "testdata", "bad_proto_config.yaml"), factories)
-	assert.EqualError(t, err, "error reading settings for receiver type \"otlp\": 1 error(s) decoding:\n\n* 'protocols' has invalid keys: thrift")
+	_, err = configtest.LoadConfigFile(t, path.Join(".", "testdata", "bad_proto_config.yaml"), factories)
+	assert.EqualError(t, err, "error reading receivers configuration for otlp: 1 error(s) decoding:\n\n* 'protocols' has invalid keys: thrift")
 
-	_, err = config.LoadConfigFile(t, path.Join(".", "testdata", "bad_no_proto_config.yaml"), factories)
-	assert.EqualError(t, err, "error reading settings for receiver type \"otlp\": must specify at least one protocol when using the OTLP receiver")
+	_, err = configtest.LoadConfigFile(t, path.Join(".", "testdata", "bad_no_proto_config.yaml"), factories)
+	assert.EqualError(t, err, "error reading receivers configuration for otlp: must specify at least one protocol when using the OTLP receiver")
 
-	_, err = config.LoadConfigFile(t, path.Join(".", "testdata", "bad_empty_config.yaml"), factories)
-	assert.EqualError(t, err, "error reading settings for receiver type \"otlp\": empty config for OTLP receiver")
+	_, err = configtest.LoadConfigFile(t, path.Join(".", "testdata", "bad_empty_config.yaml"), factories)
+	assert.EqualError(t, err, "error reading receivers configuration for otlp: empty config for OTLP receiver")
 }

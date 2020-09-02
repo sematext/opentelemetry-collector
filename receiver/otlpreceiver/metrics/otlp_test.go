@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//       http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -42,7 +42,7 @@ func TestExport(t *testing.T) {
 
 	metricSink := new(exportertest.SinkMetricsExporter)
 
-	_, port, doneFn := otlpReceiverOnGRPCServer(t, metricSink)
+	port, doneFn := otlpReceiverOnGRPCServer(t, metricSink)
 	defer doneFn()
 
 	metricsClient, metricsClientDoneFn, err := makeMetricsServiceClient(port)
@@ -60,34 +60,37 @@ func TestExport(t *testing.T) {
 				{
 					Metrics: []*otlpmetrics.Metric{
 						{
-							MetricDescriptor: &otlpmetrics.MetricDescriptor{
-								Name:        "mymetric",
-								Description: "My metric",
-								Unit:        "ms",
-								Type:        otlpmetrics.MetricDescriptor_MONOTONIC_INT64,
-							},
-							Int64DataPoints: []*otlpmetrics.Int64DataPoint{
-								{
-									Labels: []*otlpcommon.StringKeyValue{
+							Name:        "mymetric",
+							Description: "My metric",
+							Unit:        "ms",
+							Data: &otlpmetrics.Metric_IntSum{
+								IntSum: &otlpmetrics.IntSum{
+									IsMonotonic:            true,
+									AggregationTemporality: otlpmetrics.AggregationTemporality_AGGREGATION_TEMPORALITY_CUMULATIVE,
+									DataPoints: []*otlpmetrics.IntDataPoint{
 										{
-											Key:   "key1",
-											Value: "value1",
+											Labels: []*otlpcommon.StringKeyValue{
+												{
+													Key:   "key1",
+													Value: "value1",
+												},
+											},
+											StartTimeUnixNano: unixnanos1,
+											TimeUnixNano:      unixnanos2,
+											Value:             123,
+										},
+										{
+											Labels: []*otlpcommon.StringKeyValue{
+												{
+													Key:   "key2",
+													Value: "value2",
+												},
+											},
+											StartTimeUnixNano: unixnanos1,
+											TimeUnixNano:      unixnanos2,
+											Value:             456,
 										},
 									},
-									StartTimeUnixNano: unixnanos1,
-									TimeUnixNano:      unixnanos2,
-									Value:             123,
-								},
-								{
-									Labels: []*otlpcommon.StringKeyValue{
-										{
-											Key:   "key2",
-											Value: "value2",
-										},
-									},
-									StartTimeUnixNano: unixnanos1,
-									TimeUnixNano:      unixnanos2,
-									Value:             456,
 								},
 							},
 						},
@@ -122,7 +125,7 @@ func TestExport_EmptyRequest(t *testing.T) {
 
 	metricSink := new(exportertest.SinkMetricsExporter)
 
-	_, port, doneFn := otlpReceiverOnGRPCServer(t, metricSink)
+	port, doneFn := otlpReceiverOnGRPCServer(t, metricSink)
 	defer doneFn()
 
 	metricsClient, metricsClientDoneFn, err := makeMetricsServiceClient(port)
@@ -140,7 +143,7 @@ func TestExport_ErrorConsumer(t *testing.T) {
 	metricSink := new(exportertest.SinkMetricsExporter)
 	metricSink.SetConsumeMetricsError(fmt.Errorf("error"))
 
-	_, port, doneFn := otlpReceiverOnGRPCServer(t, metricSink)
+	port, doneFn := otlpReceiverOnGRPCServer(t, metricSink)
 	defer doneFn()
 
 	metricsClient, metricsClientDoneFn, err := makeMetricsServiceClient(port)
@@ -153,18 +156,21 @@ func TestExport_ErrorConsumer(t *testing.T) {
 				{
 					Metrics: []*otlpmetrics.Metric{
 						{
-							MetricDescriptor: &otlpmetrics.MetricDescriptor{
-								Name:        "mymetric",
-								Description: "My metric",
-								Unit:        "ms",
-								Type:        otlpmetrics.MetricDescriptor_MONOTONIC_INT64,
-							},
-							Int64DataPoints: []*otlpmetrics.Int64DataPoint{
-								{
-									Value: 123,
-								},
-								{
-									Value: 456,
+							Name:        "mymetric",
+							Description: "My metric",
+							Unit:        "ms",
+							Data: &otlpmetrics.Metric_IntSum{
+								IntSum: &otlpmetrics.IntSum{
+									IsMonotonic:            true,
+									AggregationTemporality: otlpmetrics.AggregationTemporality_AGGREGATION_TEMPORALITY_CUMULATIVE,
+									DataPoints: []*otlpmetrics.IntDataPoint{
+										{
+											Value: 123,
+										},
+										{
+											Value: 456,
+										},
+									},
 								},
 							},
 						},
@@ -191,22 +197,21 @@ func makeMetricsServiceClient(port int) (collectormetrics.MetricsServiceClient, 
 	return metricsClient, doneFn, nil
 }
 
-func otlpReceiverOnGRPCServer(t *testing.T, mc consumer.MetricsConsumer) (r *Receiver, port int, done func()) {
+func otlpReceiverOnGRPCServer(t *testing.T, mc consumer.MetricsConsumer) (int, func()) {
 	ln, err := net.Listen("tcp", "localhost:")
 	require.NoError(t, err, "Failed to find an available address to run the gRPC server: %v", err)
 
 	doneFnList := []func(){func() { ln.Close() }}
-	done = func() {
+	done := func() {
 		for _, doneFn := range doneFnList {
 			doneFn()
 		}
 	}
 
-	_, port, err = testutil.HostPortFromAddr(ln.Addr())
+	_, port, err := testutil.HostPortFromAddr(ln.Addr())
 	require.NoError(t, err)
 
-	r = New(receiverTagValue, mc)
-
+	r := New(receiverTagValue, mc)
 	// Now run it as a gRPC server
 	srv := obsreport.GRPCServerWithObservabilityEnabled()
 	collectormetrics.RegisterMetricsServiceServer(srv, r)
@@ -214,5 +219,5 @@ func otlpReceiverOnGRPCServer(t *testing.T, mc consumer.MetricsConsumer) (r *Rec
 		_ = srv.Serve(ln)
 	}()
 
-	return r, port, done
+	return port, done
 }

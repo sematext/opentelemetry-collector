@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//       http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -20,11 +20,8 @@ import (
 	"sync"
 	"time"
 
-	resourcepb "github.com/census-instrumentation/opencensus-proto/gen-go/resource/v1"
 	"go.uber.org/atomic"
 	"golang.org/x/text/message"
-
-	"go.opentelemetry.io/collector/consumer/consumerdata"
 )
 
 var printer = message.NewPrinter(message.MatchLanguage("en"))
@@ -53,12 +50,13 @@ type LoadGenerator struct {
 
 // LoadOptions defines the options to use for generating the load.
 type LoadOptions struct {
-	// DataItemsPerSecond specifies how many spans or metric data points to generate each second.
+	// DataItemsPerSecond specifies how many spans, metric data points, or log
+	// records to generate each second.
 	DataItemsPerSecond int
 
-	// ItemsPerBatch specifies how many spans or metric data points per batch to generate.
-	// Should be greater than zero. The number of batches generated per second will be
-	// DataItemsPerSecond/ItemsPerBatch.
+	// ItemsPerBatch specifies how many spans, metric data points, or log
+	// records per batch to generate. Should be greater than zero. The number
+	// of batches generated per second will be DataItemsPerSecond/ItemsPerBatch.
 	ItemsPerBatch int
 
 	// Attributes to add to each generated data item. Can be empty.
@@ -171,12 +169,10 @@ func (lg *LoadGenerator) generate() {
 					switch lg.sender.(type) {
 					case TraceDataSender:
 						lg.generateTrace()
-					case TraceDataSenderOld:
-						lg.generateTraceOld()
 					case MetricDataSender:
 						lg.generateMetrics()
-					case MetricDataSenderOld:
-						lg.generateMetricsOld()
+					case LogDataSender:
+						lg.generateLog()
 					default:
 						log.Printf("Invalid type of LoadGenerator sender")
 					}
@@ -210,26 +206,6 @@ func (lg *LoadGenerator) generateTrace() {
 	}
 }
 
-func (lg *LoadGenerator) generateTraceOld() {
-	traceSender := lg.sender.(TraceDataSenderOld)
-
-	spans, done := lg.dataProvider.GenerateTracesOld()
-	if done {
-		return
-	}
-	traceData := consumerdata.TraceData{
-		Spans: spans,
-	}
-
-	err := traceSender.SendSpans(traceData)
-	if err == nil {
-		lg.prevErr = nil
-	} else if lg.prevErr == nil || lg.prevErr.Error() != err.Error() {
-		lg.prevErr = err
-		log.Printf("Cannot send traces: %v", err)
-	}
-}
-
 func (lg *LoadGenerator) generateMetrics() {
 	metricSender := lg.sender.(MetricDataSender)
 
@@ -247,26 +223,19 @@ func (lg *LoadGenerator) generateMetrics() {
 	}
 }
 
-func (lg *LoadGenerator) generateMetricsOld() {
-	metricSender := lg.sender.(MetricDataSenderOld)
+func (lg *LoadGenerator) generateLog() {
+	logSender := lg.sender.(LogDataSender)
 
-	resource := &resourcepb.Resource{
-		Labels: lg.options.Attributes,
-	}
-	metrics, done := lg.dataProvider.GenerateMetricsOld()
+	logData, done := lg.dataProvider.GenerateLogs()
 	if done {
 		return
 	}
-	metricData := consumerdata.MetricsData{
-		Resource: resource,
-		Metrics:  metrics,
-	}
 
-	err := metricSender.SendMetrics(metricData)
+	err := logSender.SendLogs(logData)
 	if err == nil {
 		lg.prevErr = nil
 	} else if lg.prevErr == nil || lg.prevErr.Error() != err.Error() {
 		lg.prevErr = err
-		log.Printf("Cannot send metrics: %v", err)
+		log.Printf("Cannot send logs: %v", err)
 	}
 }

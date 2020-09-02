@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//       http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -199,11 +199,7 @@ func (hmr *receiver) scrapeAndAppendHostMetrics(ctx context.Context, metricData 
 		scraperMetrics.MoveAndAppendTo(metrics)
 	}
 
-	if len(errors) > 0 {
-		return componenterror.CombineErrors(errors)
-	}
-
-	return nil
+	return componenterror.CombineErrors(errors)
 }
 
 func (hmr *receiver) scrapeAndAppendResourceMetrics(ctx context.Context, metricData data.MetricData) error {
@@ -223,11 +219,7 @@ func (hmr *receiver) scrapeAndAppendResourceMetrics(ctx context.Context, metricD
 		scraperResourceMetrics.MoveAndAppendTo(rm)
 	}
 
-	if len(errors) > 0 {
-		return componenterror.CombineErrors(errors)
-	}
-
-	return nil
+	return componenterror.CombineErrors(errors)
 }
 
 func (hmr *receiver) closeScrapers(ctx context.Context) error {

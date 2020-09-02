@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//       http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -19,10 +19,10 @@ import (
 	"strings"
 
 	octrace "github.com/census-instrumentation/opencensus-proto/gen-go/trace/v1"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 
 	"go.opentelemetry.io/collector/consumer/consumerdata"
 	"go.opentelemetry.io/collector/consumer/pdata"
-	"go.opentelemetry.io/collector/internal"
 	"go.opentelemetry.io/collector/translator/conventions"
 	tracetranslator "go.opentelemetry.io/collector/translator/trace"
 )
@@ -85,6 +85,7 @@ func ResourceSpansToOC(rs pdata.ResourceSpans) consumerdata.TraceData {
 }
 
 func spanToOC(span pdata.Span) *octrace.Span {
+	spaps := attributesMapToOCSameProcessAsParentSpan(span.Attributes())
 	attributes := attributesMapToOCSpanAttributes(span.Attributes(), span.DroppedAttributesCount())
 	if kindAttr := spanKindToOCAttribute(span.Kind()); kindAttr != nil {
 		if attributes == nil {
@@ -97,21 +98,20 @@ func spanToOC(span pdata.Span) *octrace.Span {
 	}
 
 	return &octrace.Span{
-		TraceId:      span.TraceID().Bytes(),
-		SpanId:       span.SpanID().Bytes(),
-		Tracestate:   traceStateToOC(span.TraceState()),
-		ParentSpanId: span.ParentSpanID().Bytes(),
-		Name: &octrace.TruncatableString{
-			Value: span.Name(),
-		},
-		Kind:           spanKindToOC(span.Kind()),
-		StartTime:      internal.UnixNanoToTimestamp(span.StartTime()),
-		EndTime:        internal.UnixNanoToTimestamp(span.EndTime()),
-		Attributes:     attributes,
-		TimeEvents:     eventsToOC(span.Events(), span.DroppedEventsCount()),
-		Links:          linksToOC(span.Links(), span.DroppedLinksCount()),
-		Status:         statusToOC(span.Status()),
-		ChildSpanCount: nil, // TODO(dmitryax): Handle once OTLP supports it
+		TraceId:                 span.TraceID().Bytes(),
+		SpanId:                  span.SpanID().Bytes(),
+		Tracestate:              traceStateToOC(span.TraceState()),
+		ParentSpanId:            span.ParentSpanID().Bytes(),
+		Name:                    stringToTruncatableString(span.Name()),
+		Kind:                    spanKindToOC(span.Kind()),
+		StartTime:               pdata.UnixNanoToTimestamp(span.StartTime()),
+		EndTime:                 pdata.UnixNanoToTimestamp(span.EndTime()),
+		Attributes:              attributes,
+		TimeEvents:              eventsToOC(span.Events(), span.DroppedEventsCount()),
+		Links:                   linksToOC(span.Links(), span.DroppedLinksCount()),
+		Status:                  statusToOC(span.Status()),
+		ChildSpanCount:          nil, // TODO(dmitryax): Handle once OTLP supports it
+		SameProcessAsParentSpan: spaps,
 	}
 }
 
@@ -144,9 +144,7 @@ func attributeValueToOC(attr pdata.AttributeValue) *octrace.AttributeValue {
 	switch attr.Type() {
 	case pdata.AttributeValueSTRING:
 		a.Value = &octrace.AttributeValue_StringValue{
-			StringValue: &octrace.TruncatableString{
-				Value: attr.StringVal(),
-			},
+			StringValue: stringToTruncatableString(attr.StringVal()),
 		}
 	case pdata.AttributeValueBOOL:
 		a.Value = &octrace.AttributeValue_BoolValue{
@@ -162,9 +160,7 @@ func attributeValueToOC(attr pdata.AttributeValue) *octrace.AttributeValue {
 		}
 	default:
 		a.Value = &octrace.AttributeValue_StringValue{
-			StringValue: &octrace.TruncatableString{
-				Value: fmt.Sprintf("<Unknown OpenTelemetry attribute value type %q>", attr.Type()),
-			},
+			StringValue: stringToTruncatableString(fmt.Sprintf("<Unknown OpenTelemetry attribute value type %q>", attr.Type())),
 		}
 	}
 
@@ -198,11 +194,17 @@ func spanKindToOCAttribute(kind pdata.SpanKind) *octrace.AttributeValue {
 func stringAttributeValue(val string) *octrace.AttributeValue {
 	return &octrace.AttributeValue{
 		Value: &octrace.AttributeValue_StringValue{
-			StringValue: &octrace.TruncatableString{
-				Value: val,
-			},
+			StringValue: stringToTruncatableString(val),
 		},
 	}
+}
+
+func attributesMapToOCSameProcessAsParentSpan(attr pdata.AttributeMap) *wrapperspb.BoolValue {
+	val, ok := attr.Get(conventions.OCAttributeSameProcessAsParentSpan)
+	if !ok || val.Type() != pdata.AttributeValueBOOL {
+		return nil
+	}
+	return wrapperspb.Bool(val.BoolVal())
 }
 
 // OTLP follows the W3C format, e.g. "vendorname1=opaqueValue1,vendorname2=opaqueValue2"
@@ -302,7 +304,7 @@ func eventToOC(event pdata.SpanEvent) *octrace.Span_TimeEvent {
 			ocMessageEventType := ocMessageEventAttrValues[conventions.OCTimeEventMessageEventType]
 			ocMessageEventTypeVal := octrace.Span_TimeEvent_MessageEvent_Type_value[ocMessageEventType.StringVal()]
 			return &octrace.Span_TimeEvent{
-				Time: internal.UnixNanoToTimestamp(event.Timestamp()),
+				Time: pdata.UnixNanoToTimestamp(event.Timestamp()),
 				Value: &octrace.Span_TimeEvent_MessageEvent_{
 					MessageEvent: &octrace.Span_TimeEvent_MessageEvent{
 						Type:             octrace.Span_TimeEvent_MessageEvent_Type(ocMessageEventTypeVal),
@@ -317,13 +319,11 @@ func eventToOC(event pdata.SpanEvent) *octrace.Span_TimeEvent {
 
 	ocAttributes := attributesMapToOCSpanAttributes(attrs, event.DroppedAttributesCount())
 	return &octrace.Span_TimeEvent{
-		Time: internal.UnixNanoToTimestamp(event.Timestamp()),
+		Time: pdata.UnixNanoToTimestamp(event.Timestamp()),
 		Value: &octrace.Span_TimeEvent_Annotation_{
 			Annotation: &octrace.Span_TimeEvent_Annotation{
-				Description: &octrace.TruncatableString{
-					Value: event.Name(),
-				},
-				Attributes: ocAttributes,
+				Description: stringToTruncatableString(event.Name()),
+				Attributes:  ocAttributes,
 			},
 		},
 	}
@@ -365,5 +365,14 @@ func statusToOC(status pdata.SpanStatus) *octrace.Status {
 	return &octrace.Status{
 		Code:    int32(status.Code()),
 		Message: status.Message(),
+	}
+}
+
+func stringToTruncatableString(str string) *octrace.TruncatableString {
+	if str == "" {
+		return nil
+	}
+	return &octrace.TruncatableString{
+		Value: str,
 	}
 }

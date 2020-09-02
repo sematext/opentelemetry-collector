@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//       http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -141,7 +141,6 @@ func NewTestCase(
 func (tc *TestCase) composeTestResultFileName(fileName string) string {
 	fileName, err := filepath.Abs(path.Join(tc.resultDir, fileName))
 	require.NoError(tc.t, err, "Cannot resolve %s", fileName)
-
 	return fileName
 }
 
@@ -171,10 +170,10 @@ func (tc *TestCase) StartAgent(args ...string) {
 	logFileName := tc.composeTestResultFileName("agent.log")
 
 	_, err := tc.agentProc.Start(StartParams{
-		name:         "Agent",
-		logFilePath:  logFileName,
-		cmd:          testBedConfig.Agent,
-		cmdArgs:      args,
+		Name:         "Agent",
+		LogFilePath:  logFileName,
+		Cmd:          testBedConfig.Agent,
+		CmdArgs:      args,
 		resourceSpec: &tc.resourceSpec,
 	})
 
@@ -303,7 +302,7 @@ func (tc *TestCase) WaitForN(cond func() bool, duration time.Duration, errMsg ..
 
 		// Increase waiting interval exponentially up to 500 ms.
 		if waitInterval < time.Millisecond*500 {
-			waitInterval = waitInterval * 2
+			waitInterval *= 2
 		}
 
 		if time.Since(startTime) > duration {

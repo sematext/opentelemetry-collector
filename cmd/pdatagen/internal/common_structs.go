@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//       http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -23,9 +23,12 @@ var commonFile = &File{
 		`"testing"`,
 		``,
 		`"github.com/stretchr/testify/assert"`,
+		``,
+		`otlpcommon "go.opentelemetry.io/collector/internal/data/opentelemetry-proto-gen/common/v1"`,
 	},
 	structs: []baseStruct{
 		instrumentationLibrary,
+		anyValueArray,
 	},
 }
 
@@ -36,7 +39,7 @@ var instrumentationLibrary = &messageStruct{
 	fields: []baseField{
 		nameField,
 		&primitiveField{
-			fieldMame:       "Version",
+			fieldName:       "Version",
 			originFieldName: "Version",
 			returnType:      "string",
 			defaultVal:      `""`,
@@ -70,7 +73,7 @@ var instrumentationLibraryField = &messageField{
 }
 
 var startTimeField = &primitiveTypedField{
-	fieldMame:       "StartTime",
+	fieldName:       "StartTime",
 	originFieldName: "StartTimeUnixNano",
 	returnType:      "TimestampUnixNano",
 	rawType:         "uint64",
@@ -79,7 +82,7 @@ var startTimeField = &primitiveTypedField{
 }
 
 var timeField = &primitiveTypedField{
-	fieldMame:       "Timestamp",
+	fieldName:       "Timestamp",
 	originFieldName: "TimeUnixNano",
 	returnType:      "TimestampUnixNano",
 	rawType:         "uint64",
@@ -88,7 +91,7 @@ var timeField = &primitiveTypedField{
 }
 
 var endTimeField = &primitiveTypedField{
-	fieldMame:       "EndTime",
+	fieldName:       "EndTime",
 	originFieldName: "EndTimeUnixNano",
 	returnType:      "TimestampUnixNano",
 	rawType:         "uint64",
@@ -97,15 +100,25 @@ var endTimeField = &primitiveTypedField{
 }
 
 var attributes = &sliceField{
-	fieldMame:       "Attributes",
+	fieldName:       "Attributes",
 	originFieldName: "Attributes",
 	returnSlice:     attributeMap,
 }
 
 var nameField = &primitiveField{
-	fieldMame:       "Name",
+	fieldName:       "Name",
 	originFieldName: "Name",
 	returnType:      "string",
 	defaultVal:      `""`,
 	testVal:         `"test_name"`,
+}
+
+var anyValue = &messageStruct{
+	structName:     "AttributeValue",
+	originFullName: "otlpcommon.AnyValue",
+}
+
+var anyValueArray = &sliceStruct{
+	structName: "AnyValueArray",
+	element:    anyValue,
 }

@@ -45,7 +45,7 @@
 ---
 
 
-### OpenTelemetry Collector
+# OpenTelemetry Collector
 
 The OpenTelemetry Collector offers a vendor-agnostic implementation on how to receive, process, and export telemetry data. In addition, it removes the need to run, operate, and maintain multiple agents/collectors in order to support open-source telemetry data formats (e.g. Jaeger, Prometheus, etc.) sending to multiple open-source or commercial back-ends.
 
@@ -57,15 +57,20 @@ Objectives:
 - Extensible: Customizable without touching the core code.
 - Unified: Single codebase, deployable as an agent or collector with support for traces, metrics, and logs (future).
 
-### Community Roles
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+Triagers ([@open-telemetry/collector-triagers](https://github.com/orgs/open-telemetry/teams/collector-triager))
+- [Jay Camp](https://github.com/jrcamp), Splunk
+- [Steve Flanders](https://github.com/flands), Splunk
 
 Approvers ([@open-telemetry/collector-approvers](https://github.com/orgs/open-telemetry/teams/collector-approvers)):
 
-- [Owais Lone](https://github.com/owais), Splunk
-- [Rahul Patel](https://github.com/rghetia), Google
-- [Steve Flanders](https://github.com/flands), Splunk
-- [James Bebbington](https://github.com/james-bebbington), Google
 - [Dmitrii Anoshin](https://github.com/dmitryax), Splunk
+- [James Bebbington](https://github.com/james-bebbington), Google
+- [Nail Islamov](https://github.com/nilebox), Google
+- [Owais Lone](https://github.com/owais), Splunk
 
 Maintainers ([@open-telemetry/collector-maintainers](https://github.com/orgs/open-telemetry/teams/collector-maintainers)):
 

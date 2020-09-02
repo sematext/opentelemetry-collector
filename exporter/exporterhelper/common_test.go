@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//       http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -23,7 +23,13 @@ import (
 
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/component/componenttest"
+	"go.opentelemetry.io/collector/config/configmodels"
 )
+
+var defaultExporterCfg = &configmodels.ExporterSettings{
+	TypeVal: "test",
+	NameVal: "test",
+}
 
 func TestErrorToStatus(t *testing.T) {
 	require.Equal(t, okStatus, errToStatus(nil))
@@ -31,14 +37,14 @@ func TestErrorToStatus(t *testing.T) {
 }
 
 func TestBaseExporter(t *testing.T) {
-	be := newBaseExporter("test")
+	be := newBaseExporter(defaultExporterCfg)
 	require.NoError(t, be.Start(context.Background(), componenttest.NewNopHost()))
 	require.NoError(t, be.Shutdown(context.Background()))
 }
 
 func TestBaseExporterWithOptions(t *testing.T) {
 	be := newBaseExporter(
-		"test",
+		defaultExporterCfg,
 		WithStart(func(ctx context.Context, host component.Host) error { return errors.New("my error") }),
 		WithShutdown(func(ctx context.Context) error { return errors.New("my error") }))
 	require.Error(t, be.Start(context.Background(), componenttest.NewNopHost()))

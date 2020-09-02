@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//       http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -35,22 +35,30 @@ const (
 
 // descriptors
 
-var fileSystemUsageDescriptor = func() pdata.MetricDescriptor {
-	descriptor := pdata.NewMetricDescriptor()
-	descriptor.InitEmpty()
-	descriptor.SetName("system.filesystem.usage")
-	descriptor.SetDescription("Filesystem bytes used.")
-	descriptor.SetUnit("bytes")
-	descriptor.SetType(pdata.MetricTypeInt64)
-	return descriptor
+var fileSystemUsageDescriptor = func() pdata.Metric {
+	metric := pdata.NewMetric()
+	metric.InitEmpty()
+	metric.SetName("system.filesystem.usage")
+	metric.SetDescription("Filesystem bytes used.")
+	metric.SetUnit("bytes")
+	metric.SetDataType(pdata.MetricDataTypeIntSum)
+	sum := metric.IntSum()
+	sum.InitEmpty()
+	sum.SetIsMonotonic(false)
+	sum.SetAggregationTemporality(pdata.AggregationTemporalityCumulative)
+	return metric
 }()
 
-var fileSystemINodesUsageDescriptor = func() pdata.MetricDescriptor {
-	descriptor := pdata.NewMetricDescriptor()
-	descriptor.InitEmpty()
-	descriptor.SetName("system.filesystem.inodes.usage")
-	descriptor.SetDescription("FileSystem operations count.")
-	descriptor.SetUnit("1")
-	descriptor.SetType(pdata.MetricTypeInt64)
-	return descriptor
+var fileSystemINodesUsageDescriptor = func() pdata.Metric {
+	metric := pdata.NewMetric()
+	metric.InitEmpty()
+	metric.SetName("system.filesystem.inodes.usage")
+	metric.SetDescription("FileSystem iNodes used.")
+	metric.SetUnit("1")
+	metric.SetDataType(pdata.MetricDataTypeIntSum)
+	sum := metric.IntSum()
+	sum.InitEmpty()
+	sum.SetIsMonotonic(false)
+	sum.SetAggregationTemporality(pdata.AggregationTemporalityCumulative)
+	return metric
 }()

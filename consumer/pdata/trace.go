@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//       http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -79,6 +79,18 @@ func (td Traces) SpanCount() int {
 	return spanCount
 }
 
+// Size returns size in bytes.
+func (td Traces) Size() int {
+	size := 0
+	for i := 0; i < len(*td.orig); i++ {
+		if (*td.orig)[i] == nil {
+			continue
+		}
+		size += (*td.orig)[i].Size()
+	}
+	return size
+}
+
 func (td Traces) ResourceSpans() ResourceSpansSlice {
 	return newResourceSpansSlice(td.orig)
 }
@@ -118,16 +130,36 @@ const (
 
 const (
 	SpanKindUNSPECIFIED = SpanKind(0)
-	SpanKindINTERNAL    = SpanKind(otlptrace.Span_INTERNAL)
-	SpanKindSERVER      = SpanKind(otlptrace.Span_SERVER)
-	SpanKindCLIENT      = SpanKind(otlptrace.Span_CLIENT)
-	SpanKindPRODUCER    = SpanKind(otlptrace.Span_PRODUCER)
-	SpanKindCONSUMER    = SpanKind(otlptrace.Span_CONSUMER)
+	SpanKindINTERNAL    = SpanKind(otlptrace.Span_SPAN_KIND_INTERNAL)
+	SpanKindSERVER      = SpanKind(otlptrace.Span_SPAN_KIND_SERVER)
+	SpanKindCLIENT      = SpanKind(otlptrace.Span_SPAN_KIND_CLIENT)
+	SpanKindPRODUCER    = SpanKind(otlptrace.Span_SPAN_KIND_PRODUCER)
+	SpanKindCONSUMER    = SpanKind(otlptrace.Span_SPAN_KIND_CONSUMER)
 )
 
 // StatusCode mirrors the codes defined at
 // https://github.com/open-telemetry/opentelemetry-specification/blob/master/specification/api-tracing.md#statuscanonicalcode
 // and is numerically equal to Standard GRPC codes https://github.com/grpc/grpc/blob/master/doc/statuscodes.md
 type StatusCode otlptrace.Status_StatusCode
+
+const (
+	StatusCodeOk                 = StatusCode(otlptrace.Status_STATUS_CODE_OK)
+	StatusCodeCancelled          = StatusCode(otlptrace.Status_STATUS_CODE_CANCELLED)
+	StatusCodeUnknownError       = StatusCode(otlptrace.Status_STATUS_CODE_UNKNOWN_ERROR)
+	StatusCodeInvalidArgument    = StatusCode(otlptrace.Status_STATUS_CODE_INVALID_ARGUMENT)
+	StatusCodeDeadlineExceeded   = StatusCode(otlptrace.Status_STATUS_CODE_DEADLINE_EXCEEDED)
+	StatusCodeNotFound           = StatusCode(otlptrace.Status_STATUS_CODE_NOT_FOUND)
+	StatusCodeAlreadyExists      = StatusCode(otlptrace.Status_STATUS_CODE_ALREADY_EXISTS)
+	StatusCodePermissionDenied   = StatusCode(otlptrace.Status_STATUS_CODE_PERMISSION_DENIED)
+	StatusCodeResourceExhausted  = StatusCode(otlptrace.Status_STATUS_CODE_RESOURCE_EXHAUSTED)
+	StatusCodeFailedPrecondition = StatusCode(otlptrace.Status_STATUS_CODE_FAILED_PRECONDITION)
+	StatusCodeAborted            = StatusCode(otlptrace.Status_STATUS_CODE_ABORTED)
+	StatusCodeOutOfRange         = StatusCode(otlptrace.Status_STATUS_CODE_OUT_OF_RANGE)
+	StatusCodeUnimplemented      = StatusCode(otlptrace.Status_STATUS_CODE_UNIMPLEMENTED)
+	StatusCodeInternalError      = StatusCode(otlptrace.Status_STATUS_CODE_INTERNAL_ERROR)
+	StatusCodeUnavailable        = StatusCode(otlptrace.Status_STATUS_CODE_UNAVAILABLE)
+	StatusCodeDataLoss           = StatusCode(otlptrace.Status_STATUS_CODE_DATA_LOSS)
+	StatusCodeUnauthenticated    = StatusCode(otlptrace.Status_STATUS_CODE_UNAUTHENTICATED)
+)
 
 func (sc StatusCode) String() string { return otlptrace.Status_StatusCode(sc).String() }

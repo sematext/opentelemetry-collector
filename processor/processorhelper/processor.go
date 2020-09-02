@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//       http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -23,9 +23,13 @@ import (
 	"go.opentelemetry.io/collector/config/configmodels"
 	"go.opentelemetry.io/collector/consumer"
 	"go.opentelemetry.io/collector/consumer/pdata"
-	"go.opentelemetry.io/collector/internal/data"
 	"go.opentelemetry.io/collector/obsreport"
 )
+
+// ErrSkipProcessingData is a sentinel value to indicate when traces or metrics should intentionally be dropped
+// from further processing in the pipeline because the data is determined to be irrelevant. A processor can return this error
+// to stop further processing without propagating an error back up the pipeline to logs.
+var ErrSkipProcessingData = errors.New("sentinel error to skip processing data from the remainder of the pipeline")
 
 // Start specifies the function invoked when the processor is being started.
 type Start func(context.Context, component.Host) error
@@ -47,11 +51,11 @@ type MProcessor interface {
 	ProcessMetrics(context.Context, pdata.Metrics) (pdata.Metrics, error)
 }
 
-// LProcessor is a helper interface that allows avoiding implementing all functions in LogProcessor by using NewLogProcessor.
+// LProcessor is a helper interface that allows avoiding implementing all functions in LogsProcessor by using NewLogsProcessor.
 type LProcessor interface {
 	// ProcessLogs is a helper function that processes the incoming data and returns the data to be sent to the next component.
 	// If error is returned then returned data are ignored. It MUST not call the next component.
-	ProcessLogs(context.Context, data.Logs) (data.Logs, error)
+	ProcessLogs(context.Context, pdata.Logs) (pdata.Logs, error)
 }
 
 // Option apply changes to internalOptions.
@@ -173,6 +177,9 @@ func (mp *metricsProcessor) ConsumeMetrics(ctx context.Context, md pdata.Metrics
 	var err error
 	md, err = mp.processor.ProcessMetrics(processorCtx, md)
 	if err != nil {
+		if err == ErrSkipProcessingData {
+			return nil
+		}
 		return err
 	}
 	return mp.nextConsumer.ConsumeMetrics(ctx, md)
@@ -204,10 +211,10 @@ func NewMetricsProcessor(
 type logProcessor struct {
 	baseProcessor
 	processor    LProcessor
-	nextConsumer consumer.LogConsumer
+	nextConsumer consumer.LogsConsumer
 }
 
-func (lp *logProcessor) ConsumeLogs(ctx context.Context, ld data.Logs) error {
+func (lp *logProcessor) ConsumeLogs(ctx context.Context, ld pdata.Logs) error {
 	processorCtx := obsreport.ProcessorContext(ctx, lp.fullName)
 	var err error
 	ld, err = lp.processor.ProcessLogs(processorCtx, ld)
@@ -217,14 +224,14 @@ func (lp *logProcessor) ConsumeLogs(ctx context.Context, ld data.Logs) error {
 	return lp.nextConsumer.ConsumeLogs(ctx, ld)
 }
 
-// NewLogProcessor creates a LogProcessor that ensure context propagation and the right tags are set.
+// NewLogsProcessor creates a LogsProcessor that ensure context propagation and the right tags are set.
 // TODO: Add observability metrics support
-func NewLogProcessor(
+func NewLogsProcessor(
 	config configmodels.Processor,
-	nextConsumer consumer.LogConsumer,
+	nextConsumer consumer.LogsConsumer,
 	processor LProcessor,
 	options ...Option,
-) (component.LogProcessor, error) {
+) (component.LogsProcessor, error) {
 	if processor == nil {
 		return nil, errors.New("nil processor")
 	}

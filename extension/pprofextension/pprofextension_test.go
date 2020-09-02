@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//       http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -35,8 +35,7 @@ func TestPerformanceProfilerExtensionUsage(t *testing.T) {
 		MutexProfileFraction: 5,
 	}
 
-	pprofExt, err := newServer(config, zap.NewNop())
-	require.NoError(t, err)
+	pprofExt := newServer(config, zap.NewNop())
 	require.NotNil(t, pprofExt)
 
 	require.NoError(t, pprofExt.Start(context.Background(), componenttest.NewNopHost()))
@@ -65,8 +64,7 @@ func TestPerformanceProfilerExtensionPortAlreadyInUse(t *testing.T) {
 	config := Config{
 		Endpoint: endpoint,
 	}
-	pprofExt, err := newServer(config, zap.NewNop())
-	require.NoError(t, err)
+	pprofExt := newServer(config, zap.NewNop())
 	require.NotNil(t, pprofExt)
 
 	require.Error(t, pprofExt.Start(context.Background(), componenttest.NewNopHost()))
@@ -77,8 +75,7 @@ func TestPerformanceProfilerMultipleStarts(t *testing.T) {
 		Endpoint: testutil.GetAvailableLocalAddress(t),
 	}
 
-	pprofExt, err := newServer(config, zap.NewNop())
-	require.NoError(t, err)
+	pprofExt := newServer(config, zap.NewNop())
 	require.NotNil(t, pprofExt)
 
 	require.NoError(t, pprofExt.Start(context.Background(), componenttest.NewNopHost()))
@@ -93,8 +90,7 @@ func TestPerformanceProfilerMultipleShutdowns(t *testing.T) {
 		Endpoint: testutil.GetAvailableLocalAddress(t),
 	}
 
-	pprofExt, err := newServer(config, zap.NewNop())
-	require.NoError(t, err)
+	pprofExt := newServer(config, zap.NewNop())
 	require.NotNil(t, pprofExt)
 
 	require.NoError(t, pprofExt.Start(context.Background(), componenttest.NewNopHost()))
@@ -107,8 +103,7 @@ func TestPerformanceProfilerShutdownWithoutStart(t *testing.T) {
 		Endpoint: testutil.GetAvailableLocalAddress(t),
 	}
 
-	pprofExt, err := newServer(config, zap.NewNop())
-	require.NoError(t, err)
+	pprofExt := newServer(config, zap.NewNop())
 	require.NotNil(t, pprofExt)
 
 	require.NoError(t, pprofExt.Shutdown(context.Background()))

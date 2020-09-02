@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//       http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -34,6 +34,9 @@ func TestScrapeMetrics_Error(t *testing.T) {
 		diskWriteBytesPerSecCounterReturnValue interface{}
 		diskReadsPerSecCounterReturnValue      interface{}
 		diskWritesPerSecCounterReturnValue     interface{}
+		avgDiskSecsPerReadCounterReturnValue   interface{}
+		avgDiskSecsPerWriteCounterReturnValue  interface{}
+		diskQueueLengthCounterReturnValue      interface{}
 		expectedErr                            string
 	}
 
@@ -58,13 +61,29 @@ func TestScrapeMetrics_Error(t *testing.T) {
 			diskWritesPerSecCounterReturnValue: errors.New("err1"),
 			expectedErr:                        "err1",
 		},
+		{
+			name:                                 "avgSecsPerReadCounterError",
+			avgDiskSecsPerReadCounterReturnValue: errors.New("err1"),
+			expectedErr:                          "err1",
+		},
+		{
+			name:                                  "avgSecsPerReadWriteError",
+			avgDiskSecsPerWriteCounterReturnValue: errors.New("err1"),
+			expectedErr:                           "err1",
+		},
+		{
+			name:                              "avgDiskQueueLengthError",
+			diskQueueLengthCounterReturnValue: errors.New("err1"),
+			expectedErr:                       "err1",
+		},
 	}
 
 	for _, test := range testCases {
 		t.Run(test.name, func(t *testing.T) {
-			scraper := newDiskScraper(context.Background(), &Config{})
+			scraper, err := newDiskScraper(context.Background(), &Config{})
+			require.NoError(t, err, "Failed to create disk scraper: %v", err)
 
-			err := scraper.Initialize(context.Background())
+			err = scraper.Initialize(context.Background())
 			require.NoError(t, err, "Failed to initialize disk scraper: %v", err)
 			defer func() { assert.NoError(t, scraper.Close(context.Background())) }()
 
@@ -72,6 +91,9 @@ func TestScrapeMetrics_Error(t *testing.T) {
 			scraper.diskWriteBytesPerSecCounter = pdh.NewMockPerfCounter(test.diskWriteBytesPerSecCounterReturnValue)
 			scraper.diskReadsPerSecCounter = pdh.NewMockPerfCounter(test.diskReadsPerSecCounterReturnValue)
 			scraper.diskWritesPerSecCounter = pdh.NewMockPerfCounter(test.diskWritesPerSecCounterReturnValue)
+			scraper.avgDiskSecsPerReadCounter = pdh.NewMockPerfCounter(test.avgDiskSecsPerReadCounterReturnValue)
+			scraper.avgDiskSecsPerWriteCounter = pdh.NewMockPerfCounter(test.avgDiskSecsPerWriteCounterReturnValue)
+			scraper.diskQueueLengthCounter = pdh.NewMockPerfCounter(test.diskQueueLengthCounterReturnValue)
 
 			_, err = scraper.ScrapeMetrics(context.Background())
 			assert.EqualError(t, err, test.expectedErr)

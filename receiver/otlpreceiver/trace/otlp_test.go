@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//       http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -41,7 +41,7 @@ func TestExport(t *testing.T) {
 
 	traceSink := new(exportertest.SinkTraceExporter)
 
-	_, port, doneFn := otlpReceiverOnGRPCServer(t, traceSink)
+	port, doneFn := otlpReceiverOnGRPCServer(t, traceSink)
 	defer doneFn()
 
 	traceClient, traceClientDoneFn, err := makeTraceServiceClient(port)
@@ -67,10 +67,10 @@ func TestExport(t *testing.T) {
 							TraceId:           traceID,
 							SpanId:            spanID,
 							Name:              "operationB",
-							Kind:              otlptrace.Span_SERVER,
+							Kind:              otlptrace.Span_SPAN_KIND_SERVER,
 							StartTimeUnixNano: unixnanos,
 							EndTimeUnixNano:   unixnanos,
-							Status:            &otlptrace.Status{Message: "status-cancelled", Code: otlptrace.Status_Cancelled},
+							Status:            &otlptrace.Status{Message: "status-cancelled", Code: otlptrace.Status_STATUS_CODE_CANCELLED},
 							TraceState:        "a=text,b=123",
 						},
 					},
@@ -101,7 +101,7 @@ func TestExport(t *testing.T) {
 func TestExport_EmptyRequest(t *testing.T) {
 	traceSink := new(exportertest.SinkTraceExporter)
 
-	_, port, doneFn := otlpReceiverOnGRPCServer(t, traceSink)
+	port, doneFn := otlpReceiverOnGRPCServer(t, traceSink)
 	defer doneFn()
 
 	traceClient, traceClientDoneFn, err := makeTraceServiceClient(port)
@@ -117,7 +117,7 @@ func TestExport_ErrorConsumer(t *testing.T) {
 	traceSink := new(exportertest.SinkTraceExporter)
 	traceSink.SetConsumeTraceError(fmt.Errorf("error"))
 
-	_, port, doneFn := otlpReceiverOnGRPCServer(t, traceSink)
+	port, doneFn := otlpReceiverOnGRPCServer(t, traceSink)
 	defer doneFn()
 
 	traceClient, traceClientDoneFn, err := makeTraceServiceClient(port)
@@ -158,24 +158,24 @@ func makeTraceServiceClient(port int) (collectortrace.TraceServiceClient, func()
 	return metricsClient, doneFn, nil
 }
 
-func otlpReceiverOnGRPCServer(t *testing.T, tc consumer.TraceConsumer) (r *Receiver, port int, done func()) {
+func otlpReceiverOnGRPCServer(t *testing.T, tc consumer.TraceConsumer) (int, func()) {
 	ln, err := net.Listen("tcp", "localhost:")
 	require.NoError(t, err, "Failed to find an available address to run the gRPC server: %v", err)
 
 	doneFnList := []func(){func() { ln.Close() }}
-	done = func() {
+	done := func() {
 		for _, doneFn := range doneFnList {
 			doneFn()
 		}
 	}
 
-	_, port, err = testutil.HostPortFromAddr(ln.Addr())
+	_, port, err := testutil.HostPortFromAddr(ln.Addr())
 	if err != nil {
 		done()
 		t.Fatalf("Failed to parse host:port from listener address: %s error: %v", ln.Addr(), err)
 	}
 
-	r = New(receiverTagValue, tc)
+	r := New(receiverTagValue, tc)
 	require.NoError(t, err)
 
 	// Now run it as a gRPC server
@@ -185,5 +185,5 @@ func otlpReceiverOnGRPCServer(t *testing.T, tc consumer.TraceConsumer) (r *Recei
 		_ = srv.Serve(ln)
 	}()
 
-	return r, port, done
+	return port, done
 }

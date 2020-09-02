@@ -4,15 +4,13 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//       http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
-//lint:file-ignore U1000 t.Skip() flaky test causes unused function warning.
 
 package otlpreceiver
 
@@ -26,7 +24,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang/protobuf/proto"
+	"github.com/gogo/protobuf/proto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -53,14 +51,14 @@ import (
 	"go.opentelemetry.io/collector/translator/conventions"
 )
 
-const otlpReceiver = "otlp_receiver_test"
+const otlpReceiverName = "otlp_receiver_test"
 
 func TestGrpcGateway_endToEnd(t *testing.T) {
 	addr := testutil.GetAvailableLocalAddress(t)
 
 	// Set the buffer count to 1 to make it flush the test span immediately.
 	sink := new(exportertest.SinkTraceExporter)
-	ocr := newHTTPReceiver(t, otlpReceiver, addr, sink, nil)
+	ocr := newHTTPReceiver(t, addr, sink, nil)
 
 	require.NoError(t, ocr.Start(context.Background(), componenttest.NewNopHost()), "Failed to start trace receiver")
 	defer ocr.Shutdown(context.Background())
@@ -175,7 +173,7 @@ func TestProtoHttp(t *testing.T) {
 	// Set the buffer count to 1 to make it flush the test span immediately.
 	tSink := new(exportertest.SinkTraceExporter)
 	mSink := new(exportertest.SinkMetricsExporter)
-	ocr := newHTTPReceiver(t, otlpReceiver, addr, tSink, mSink)
+	ocr := newHTTPReceiver(t, addr, tSink, mSink)
 
 	require.NoError(t, ocr.Start(context.Background(), componenttest.NewNopHost()), "Failed to start trace receiver")
 	defer ocr.Shutdown(context.Background())
@@ -190,7 +188,7 @@ func TestProtoHttp(t *testing.T) {
 	traceProto := collectortrace.ExportTraceServiceRequest{
 		ResourceSpans: wantOtlp,
 	}
-	traceBytes, err := proto.Marshal(&traceProto)
+	traceBytes, err := traceProto.Marshal()
 	if err != nil {
 		t.Errorf("Error marshaling protobuf: %v", err)
 	}
@@ -206,8 +204,8 @@ func TestProtoHttp(t *testing.T) {
 	require.Equal(t, 200, resp.StatusCode, "Unexpected return status")
 	require.Equal(t, "application/x-protobuf", resp.Header.Get("Content-Type"), "Unexpected response Content-Type")
 
-	tmp := collectortrace.ExportTraceServiceResponse{}
-	err = proto.Unmarshal(respBytes, &tmp)
+	tmp := &collectortrace.ExportTraceServiceResponse{}
+	err = tmp.Unmarshal(respBytes)
 	require.NoError(t, err, "Unable to unmarshal response to ExportTraceServiceResponse proto")
 
 	gotOtlp := pdata.TracesToOtlp(tSink.AllTraces()[0])
@@ -223,8 +221,8 @@ func TestProtoHttp(t *testing.T) {
 	// https://github.com/stretchr/testify/issues/758
 	if !proto.Equal(got, want) {
 		t.Errorf("Sending trace proto over http failed\nGot:\n%v\nWant:\n%v\n",
-			proto.MarshalTextString(got),
-			proto.MarshalTextString(want))
+			got.String(),
+			want.String())
 	}
 
 }
@@ -235,7 +233,7 @@ func TestGRPCNewPortAlreadyUsed(t *testing.T) {
 	require.NoError(t, err, "failed to listen on %q: %v", addr, err)
 	defer ln.Close()
 
-	r := newGRPCReceiver(t, otlpReceiver, addr, new(exportertest.SinkTraceExporter), new(exportertest.SinkMetricsExporter))
+	r := newGRPCReceiver(t, otlpReceiverName, addr, new(exportertest.SinkTraceExporter), new(exportertest.SinkMetricsExporter))
 	require.NotNil(t, r)
 
 	require.Error(t, r.Start(context.Background(), componenttest.NewNopHost()))
@@ -247,7 +245,7 @@ func TestHTTPNewPortAlreadyUsed(t *testing.T) {
 	require.NoError(t, err, "failed to listen on %q: %v", addr, err)
 	defer ln.Close()
 
-	r := newHTTPReceiver(t, otlpReceiver, addr, new(exportertest.SinkTraceExporter), new(exportertest.SinkMetricsExporter))
+	r := newHTTPReceiver(t, addr, new(exportertest.SinkTraceExporter), new(exportertest.SinkMetricsExporter))
 	require.NotNil(t, r)
 
 	require.Error(t, r.Start(context.Background(), componenttest.NewNopHost()))
@@ -255,14 +253,14 @@ func TestHTTPNewPortAlreadyUsed(t *testing.T) {
 
 func TestGRPCStartWithoutConsumers(t *testing.T) {
 	addr := testutil.GetAvailableLocalAddress(t)
-	r := newGRPCReceiver(t, otlpReceiver, addr, nil, nil)
+	r := newGRPCReceiver(t, otlpReceiverName, addr, nil, nil)
 	require.NotNil(t, r)
 	require.Error(t, r.Start(context.Background(), componenttest.NewNopHost()))
 }
 
 func TestHTTPStartWithoutConsumers(t *testing.T) {
 	addr := testutil.GetAvailableLocalAddress(t)
-	r := newHTTPReceiver(t, otlpReceiver, addr, nil, nil)
+	r := newHTTPReceiver(t, addr, nil, nil)
 	require.NotNil(t, r)
 	require.Error(t, r.Start(context.Background(), componenttest.NewNopHost()))
 }
@@ -437,7 +435,7 @@ func TestHTTPInvalidTLSCredentials(t *testing.T) {
 		`failed to load TLS config: for auth via TLS, either both certificate and key must be supplied, or neither`)
 }
 
-func newGRPCReceiver(t *testing.T, name string, endpoint string, tc consumer.TraceConsumer, mc consumer.MetricsConsumer) *Receiver {
+func newGRPCReceiver(t *testing.T, name string, endpoint string, tc consumer.TraceConsumer, mc consumer.MetricsConsumer) *otlpReceiver {
 	factory := NewFactory()
 	cfg := factory.CreateDefaultConfig().(*Config)
 	cfg.SetName(name)
@@ -446,16 +444,16 @@ func newGRPCReceiver(t *testing.T, name string, endpoint string, tc consumer.Tra
 	return newReceiver(t, factory, cfg, tc, mc)
 }
 
-func newHTTPReceiver(t *testing.T, name string, endpoint string, tc consumer.TraceConsumer, mc consumer.MetricsConsumer) *Receiver {
+func newHTTPReceiver(t *testing.T, endpoint string, tc consumer.TraceConsumer, mc consumer.MetricsConsumer) *otlpReceiver {
 	factory := NewFactory()
 	cfg := factory.CreateDefaultConfig().(*Config)
-	cfg.SetName(name)
+	cfg.SetName(otlpReceiverName)
 	cfg.HTTP.Endpoint = endpoint
 	cfg.GRPC = nil
 	return newReceiver(t, factory, cfg, tc, mc)
 }
 
-func newReceiver(t *testing.T, factory component.ReceiverFactory, cfg *Config, tc consumer.TraceConsumer, mc consumer.MetricsConsumer) *Receiver {
+func newReceiver(t *testing.T, factory component.ReceiverFactory, cfg *Config, tc consumer.TraceConsumer, mc consumer.MetricsConsumer) *otlpReceiver {
 	r, err := createReceiver(cfg)
 	require.NoError(t, err)
 	if tc != nil {

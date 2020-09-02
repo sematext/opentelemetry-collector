@@ -1,10 +1,10 @@
-// Copyright 2020, OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//       http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -23,6 +23,7 @@ import (
 
 	"go.opentelemetry.io/collector/component/componenterror"
 	"go.opentelemetry.io/collector/consumer/pdata"
+	"go.opentelemetry.io/collector/receiver/hostmetricsreceiver/internal"
 	"go.opentelemetry.io/collector/receiver/hostmetricsreceiver/internal/windows/pdh"
 )
 
@@ -54,7 +55,7 @@ func newSwapScraper(_ context.Context, cfg *Config) *scraper {
 
 // Initialize
 func (s *scraper) Initialize(_ context.Context) error {
-	s.startTime = pdata.TimestampUnixNano(uint64(time.Now().UnixNano()))
+	s.startTime = internal.TimeToUnixNano(time.Now())
 	s.prevPagingScrapeTime = time.Now()
 
 	var err error
@@ -73,7 +74,7 @@ func (s *scraper) Initialize(_ context.Context) error {
 }
 
 // Close
-func (s *scraper) Close(_ context.Context) error {
+func (s *scraper) Close(context.Context) error {
 	var errors []error
 
 	err := s.pageReadsPerSecCounter.Close()
@@ -90,7 +91,7 @@ func (s *scraper) Close(_ context.Context) error {
 }
 
 // ScrapeMetrics
-func (s *scraper) ScrapeMetrics(_ context.Context) (pdata.MetricSlice, error) {
+func (s *scraper) ScrapeMetrics(context.Context) (pdata.MetricSlice, error) {
 	metrics := pdata.NewMetricSlice()
 
 	var errors []error
@@ -105,14 +106,11 @@ func (s *scraper) ScrapeMetrics(_ context.Context) (pdata.MetricSlice, error) {
 		errors = append(errors, err)
 	}
 
-	if len(errors) > 0 {
-		return metrics, componenterror.CombineErrors(errors)
-	}
-
-	return metrics, nil
+	return metrics, componenterror.CombineErrors(errors)
 }
 
 func (s *scraper) scrapeAndAppendSwapUsageMetric(metrics pdata.MetricSlice) error {
+	now := internal.TimeToUnixNano(time.Now())
 	pageFiles, err := s.pageFileStats()
 	if err != nil {
 		return err
@@ -120,29 +118,29 @@ func (s *scraper) scrapeAndAppendSwapUsageMetric(metrics pdata.MetricSlice) erro
 
 	idx := metrics.Len()
 	metrics.Resize(idx + 1)
-	initializeSwapUsageMetric(metrics.At(idx), pageFiles)
+	initializeSwapUsageMetric(metrics.At(idx), now, pageFiles)
 	return nil
 }
 
-func initializeSwapUsageMetric(metric pdata.Metric, pageFiles []*pageFileData) {
-	swapUsageDescriptor.CopyTo(metric.MetricDescriptor())
+func initializeSwapUsageMetric(metric pdata.Metric, now pdata.TimestampUnixNano, pageFiles []*pageFileData) {
+	swapUsageDescriptor.CopyTo(metric)
 
-	idps := metric.Int64DataPoints()
+	idps := metric.IntSum().DataPoints()
 	idps.Resize(2 * len(pageFiles))
 
 	idx := 0
 	for _, pageFile := range pageFiles {
-		initializeSwapUsageDataPoint(idps.At(idx+0), pageFile.name, usedLabelValue, int64(pageFile.used))
-		initializeSwapUsageDataPoint(idps.At(idx+1), pageFile.name, freeLabelValue, int64(pageFile.total-pageFile.used))
+		initializeSwapUsageDataPoint(idps.At(idx+0), now, pageFile.name, usedLabelValue, int64(pageFile.used))
+		initializeSwapUsageDataPoint(idps.At(idx+1), now, pageFile.name, freeLabelValue, int64(pageFile.total-pageFile.used))
 		idx += 2
 	}
 }
 
-func initializeSwapUsageDataPoint(dataPoint pdata.Int64DataPoint, deviceLabel string, stateLabel string, value int64) {
+func initializeSwapUsageDataPoint(dataPoint pdata.IntDataPoint, now pdata.TimestampUnixNano, deviceLabel string, stateLabel string, value int64) {
 	labelsMap := dataPoint.LabelsMap()
 	labelsMap.Insert(deviceLabelName, deviceLabel)
 	labelsMap.Insert(stateLabelName, stateLabel)
-	dataPoint.SetTimestamp(pdata.TimestampUnixNano(uint64(time.Now().UnixNano())))
+	dataPoint.SetTimestamp(now)
 	dataPoint.SetValue(value)
 }
 
@@ -150,6 +148,7 @@ func (s *scraper) scrapeAndAppendPagingMetric(metrics pdata.MetricSlice) error {
 	now := time.Now()
 	durationSinceLastScraped := now.Sub(s.prevPagingScrapeTime).Seconds()
 	s.prevPagingScrapeTime = now
+	nowUnixTime := pdata.TimestampUnixNano(uint64(now.UnixNano()))
 
 	pageReadsPerSecValues, err := s.pageReadsPerSecCounter.ScrapeData()
 	if err != nil {
@@ -166,24 +165,24 @@ func (s *scraper) scrapeAndAppendPagingMetric(metrics pdata.MetricSlice) error {
 
 	idx := metrics.Len()
 	metrics.Resize(idx + 1)
-	initializePagingMetric(metrics.At(idx), s.startTime, s.cumulativePageReads, s.cumulativePageWrites)
+	initializePagingMetric(metrics.At(idx), s.startTime, nowUnixTime, s.cumulativePageReads, s.cumulativePageWrites)
 	return nil
 }
 
-func initializePagingMetric(metric pdata.Metric, startTime pdata.TimestampUnixNano, reads float64, writes float64) {
-	swapPagingDescriptor.CopyTo(metric.MetricDescriptor())
+func initializePagingMetric(metric pdata.Metric, startTime, now pdata.TimestampUnixNano, reads float64, writes float64) {
+	swapPagingDescriptor.CopyTo(metric)
 
-	idps := metric.Int64DataPoints()
+	idps := metric.IntSum().DataPoints()
 	idps.Resize(2)
-	initializePagingDataPoint(idps.At(0), startTime, inDirectionLabelValue, reads)
-	initializePagingDataPoint(idps.At(1), startTime, outDirectionLabelValue, writes)
+	initializePagingDataPoint(idps.At(0), startTime, now, inDirectionLabelValue, reads)
+	initializePagingDataPoint(idps.At(1), startTime, now, outDirectionLabelValue, writes)
 }
 
-func initializePagingDataPoint(dataPoint pdata.Int64DataPoint, startTime pdata.TimestampUnixNano, directionLabel string, value float64) {
+func initializePagingDataPoint(dataPoint pdata.IntDataPoint, startTime, now pdata.TimestampUnixNano, directionLabel string, value float64) {
 	labelsMap := dataPoint.LabelsMap()
 	labelsMap.Insert(typeLabelName, majorTypeLabelValue)
 	labelsMap.Insert(directionLabelName, directionLabel)
 	dataPoint.SetStartTime(startTime)
-	dataPoint.SetTimestamp(pdata.TimestampUnixNano(uint64(time.Now().UnixNano())))
+	dataPoint.SetTimestamp(now)
 	dataPoint.SetValue(int64(math.Round(value)))
 }

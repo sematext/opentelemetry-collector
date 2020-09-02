@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//       http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -22,17 +22,18 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.opentelemetry.io/collector/component"
-	"go.opentelemetry.io/collector/config"
+	"go.opentelemetry.io/collector/component/componenttest"
 	"go.opentelemetry.io/collector/config/configmodels"
+	"go.opentelemetry.io/collector/config/configtest"
 )
 
 func TestLoadConfig(t *testing.T) {
-	factories, err := config.ExampleComponents()
+	factories, err := componenttest.ExampleComponents()
 	assert.NoError(t, err)
 
-	factory := &Factory{}
+	factory := NewFactory()
 	factories.Processors[typeStr] = factory
-	cfg, err := config.LoadConfigFile(t, path.Join(".", "testdata", "config.yaml"), factories)
+	cfg, err := configtest.LoadConfigFile(t, path.Join(".", "testdata", "config.yaml"), factories)
 
 	require.Nil(t, err)
 	require.NotNil(t, cfg)
@@ -51,17 +52,16 @@ func TestLoadConfig(t *testing.T) {
 }
 
 func TestLoadConfigEmpty(t *testing.T) {
-	factories, err := config.ExampleComponents()
+	factories, err := componenttest.ExampleComponents()
 	require.NoError(t, err)
-	factories.Processors, err = component.MakeProcessorFactoryMap(&Factory{})
+	factories.Processors, err = component.MakeProcessorFactoryMap(NewFactory())
 	require.NotNil(t, factories.Processors)
 	require.NoError(t, err)
 
-	config, err := config.LoadConfigFile(t, path.Join(".", "testdata", "empty.yaml"), factories)
+	config, err := configtest.LoadConfigFile(t, path.Join(".", "testdata", "empty.yaml"), factories)
 
 	require.Nil(t, err)
 	require.NotNil(t, config)
 	p0 := config.Processors["probabilistic_sampler"]
-	factory := &Factory{}
-	assert.Equal(t, p0, factory.CreateDefaultConfig())
+	assert.Equal(t, p0, createDefaultConfig())
 }

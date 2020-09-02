@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//       http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,20 +16,23 @@ package testbed
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
+	"os"
+	"strconv"
+	"time"
 
 	"go.uber.org/zap"
 
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/config/configtls"
-	"go.opentelemetry.io/collector/consumer/consumerdata"
 	"go.opentelemetry.io/collector/consumer/pdata"
-	"go.opentelemetry.io/collector/consumer/pdatautil"
 	"go.opentelemetry.io/collector/exporter/jaegerexporter"
 	"go.opentelemetry.io/collector/exporter/opencensusexporter"
 	"go.opentelemetry.io/collector/exporter/otlpexporter"
+	"go.opentelemetry.io/collector/exporter/prometheusexporter"
 	"go.opentelemetry.io/collector/exporter/zipkinexporter"
-	"go.opentelemetry.io/collector/internal/data"
 )
 
 // DataSender defines the interface that allows sending data. This is an interface
@@ -57,39 +60,6 @@ type DataSender interface {
 
 // TraceDataSender defines the interface that allows sending trace data. It adds ability
 // to send a batch of Spans to the DataSender interface.
-type TraceDataSenderOld interface {
-	DataSender
-	SendSpans(traces consumerdata.TraceData) error
-}
-
-// MetricDataSender defines the interface that allows sending metric data. It adds ability
-// to send a batch of Metrics to the DataSender interface.
-type MetricDataSenderOld interface {
-	DataSender
-	SendMetrics(metrics consumerdata.MetricsData) error
-}
-
-// DataSenderOverTraceExporter partially implements TraceDataSender via a TraceExporter.
-type DataSenderOverTraceExporterOld struct {
-	exporter component.TraceExporterOld
-	Host     string
-	Port     int
-}
-
-func (ds *DataSenderOverTraceExporterOld) SendSpans(traces consumerdata.TraceData) error {
-	return ds.exporter.ConsumeTraceData(context.Background(), traces)
-}
-
-func (ds *DataSenderOverTraceExporterOld) Flush() {
-	// TraceExporter interface does not support Flush, so nothing to do.
-}
-
-func (ds *DataSenderOverTraceExporterOld) GetCollectorPort() int {
-	return ds.Port
-}
-
-// TraceDataSender defines the interface that allows sending trace data. It adds ability
-// to send a batch of Spans to the DataSender interface.
 type TraceDataSender interface {
 	DataSender
 	SendSpans(traces pdata.Traces) error
@@ -99,7 +69,14 @@ type TraceDataSender interface {
 // to send a batch of Metrics to the DataSender interface.
 type MetricDataSender interface {
 	DataSender
-	SendMetrics(metrics data.MetricData) error
+	SendMetrics(metrics pdata.Metrics) error
+}
+
+// LogDataSender defines the interface that allows sending log data. It adds ability
+// to send a batch of Logs to the DataSender interface.
+type LogDataSender interface {
+	DataSender
+	SendLogs(logs pdata.Logs) error
 }
 
 // DataSenderOverTraceExporter partially implements TraceDataSender via a TraceExporter.
@@ -139,8 +116,10 @@ func NewJaegerGRPCDataSender(host string, port int) *JaegerGRPCDataSender {
 }
 
 func (je *JaegerGRPCDataSender) Start() error {
-	factory := jaegerexporter.Factory{}
+	factory := jaegerexporter.NewFactory()
 	cfg := factory.CreateDefaultConfig().(*jaegerexporter.Config)
+	// Disable retries, we should push data and if error just log it.
+	cfg.RetrySettings.Enabled = false
 	cfg.Endpoint = fmt.Sprintf("%s:%d", je.Host, je.Port)
 	cfg.TLSSetting = configtls.TLSClientSetting{
 		Insecure: true,
@@ -170,30 +149,31 @@ func (je *JaegerGRPCDataSender) ProtocolName() string {
 
 // OCTraceDataSender implements TraceDataSender for OpenCensus trace protocol.
 type OCTraceDataSender struct {
-	DataSenderOverTraceExporterOld
+	DataSenderOverTraceExporter
 }
 
 // Ensure OCTraceDataSender implements TraceDataSender.
-var _ TraceDataSenderOld = (*OCTraceDataSender)(nil)
+var _ TraceDataSender = (*OCTraceDataSender)(nil)
 
 // NewOCTraceDataSender creates a new OCTraceDataSender that will send
 // to the specified port after Start is called.
 func NewOCTraceDataSender(host string, port int) *OCTraceDataSender {
-	return &OCTraceDataSender{DataSenderOverTraceExporterOld{
+	return &OCTraceDataSender{DataSenderOverTraceExporter{
 		Host: host,
 		Port: port,
 	}}
 }
 
 func (ote *OCTraceDataSender) Start() error {
-	factory := opencensusexporter.Factory{}
+	factory := opencensusexporter.NewFactory()
 	cfg := factory.CreateDefaultConfig().(*opencensusexporter.Config)
 	cfg.Endpoint = fmt.Sprintf("%s:%d", ote.Host, ote.Port)
 	cfg.TLSSetting = configtls.TLSClientSetting{
 		Insecure: true,
 	}
 
-	exporter, err := factory.CreateTraceExporter(zap.L(), cfg)
+	params := component.ExporterCreateParams{Logger: zap.L()}
+	exporter, err := factory.CreateTraceExporter(context.Background(), params, cfg)
 	if err != nil {
 		return err
 	}
@@ -215,13 +195,13 @@ func (ote *OCTraceDataSender) ProtocolName() string {
 
 // OCMetricsDataSender implements MetricDataSender for OpenCensus metrics protocol.
 type OCMetricsDataSender struct {
-	exporter component.MetricsExporterOld
+	exporter component.MetricsExporter
 	host     string
 	port     int
 }
 
 // Ensure OCMetricsDataSender implements MetricDataSender.
-var _ MetricDataSenderOld = (*OCMetricsDataSender)(nil)
+var _ MetricDataSender = (*OCMetricsDataSender)(nil)
 
 // NewOCMetricDataSender creates a new OpenCensus metric protocol sender that will send
 // to the specified port after Start is called.
@@ -233,14 +213,15 @@ func NewOCMetricDataSender(host string, port int) *OCMetricsDataSender {
 }
 
 func (ome *OCMetricsDataSender) Start() error {
-	factory := opencensusexporter.Factory{}
+	factory := opencensusexporter.NewFactory()
 	cfg := factory.CreateDefaultConfig().(*opencensusexporter.Config)
 	cfg.Endpoint = fmt.Sprintf("%s:%d", ome.host, ome.port)
 	cfg.TLSSetting = configtls.TLSClientSetting{
 		Insecure: true,
 	}
 
-	exporter, err := factory.CreateMetricsExporter(zap.L(), cfg)
+	params := component.ExporterCreateParams{Logger: zap.L()}
+	exporter, err := factory.CreateMetricsExporter(context.Background(), params, cfg)
 	if err != nil {
 		return err
 	}
@@ -249,8 +230,8 @@ func (ome *OCMetricsDataSender) Start() error {
 	return nil
 }
 
-func (ome *OCMetricsDataSender) SendMetrics(metrics consumerdata.MetricsData) error {
-	return ome.exporter.ConsumeMetricsData(context.Background(), metrics)
+func (ome *OCMetricsDataSender) SendMetrics(md pdata.Metrics) error {
+	return ome.exporter.ConsumeMetrics(context.Background(), md)
 }
 
 func (ome *OCMetricsDataSender) Flush() {
@@ -289,7 +270,7 @@ func NewOTLPTraceDataSender(host string, port int) *OTLPTraceDataSender {
 }
 
 func (ote *OTLPTraceDataSender) Start() error {
-	factory := otlpexporter.Factory{}
+	factory := otlpexporter.NewFactory()
 	cfg := factory.CreateDefaultConfig().(*otlpexporter.Config)
 	cfg.Endpoint = fmt.Sprintf("%s:%d", ote.Host, ote.Port)
 	cfg.TLSSetting = configtls.TLSClientSetting{
@@ -339,9 +320,10 @@ func NewOTLPMetricDataSender(host string, port int) *OTLPMetricsDataSender {
 }
 
 func (ome *OTLPMetricsDataSender) Start() error {
-	factory := otlpexporter.Factory{}
+	factory := otlpexporter.NewFactory()
 	cfg := factory.CreateDefaultConfig().(*otlpexporter.Config)
 	cfg.Endpoint = fmt.Sprintf("%s:%d", ome.host, ome.port)
+
 	cfg.TLSSetting = configtls.TLSClientSetting{
 		Insecure: true,
 	}
@@ -356,8 +338,8 @@ func (ome *OTLPMetricsDataSender) Start() error {
 	return nil
 }
 
-func (ome *OTLPMetricsDataSender) SendMetrics(metrics data.MetricData) error {
-	return ome.exporter.ConsumeMetrics(context.Background(), pdatautil.MetricsFromInternalMetrics(metrics))
+func (ome *OTLPMetricsDataSender) SendMetrics(md pdata.Metrics) error {
+	return ome.exporter.ConsumeMetrics(context.Background(), md)
 }
 
 func (ome *OTLPMetricsDataSender) Flush() {
@@ -382,27 +364,28 @@ func (ome *OTLPMetricsDataSender) ProtocolName() string {
 
 // ZipkinDataSender implements TraceDataSender for Zipkin http protocol.
 type ZipkinDataSender struct {
-	DataSenderOverTraceExporterOld
+	DataSenderOverTraceExporter
 }
 
 // Ensure ZipkinDataSender implements TraceDataSender.
-var _ TraceDataSenderOld = (*ZipkinDataSender)(nil)
+var _ TraceDataSender = (*ZipkinDataSender)(nil)
 
 // NewZipkinDataSender creates a new Zipkin protocol sender that will send
 // to the specified port after Start is called.
 func NewZipkinDataSender(host string, port int) *ZipkinDataSender {
-	return &ZipkinDataSender{DataSenderOverTraceExporterOld{
+	return &ZipkinDataSender{DataSenderOverTraceExporter{
 		Host: host,
 		Port: port,
 	}}
 }
 
 func (zs *ZipkinDataSender) Start() error {
-	factory := zipkinexporter.Factory{}
+	factory := zipkinexporter.NewFactory()
 	cfg := factory.CreateDefaultConfig().(*zipkinexporter.Config)
 	cfg.Endpoint = fmt.Sprintf("http://localhost:%d/api/v2/spans", zs.Port)
 
-	exporter, err := factory.CreateTraceExporter(zap.L(), cfg)
+	params := component.ExporterCreateParams{Logger: zap.L()}
+	exporter, err := factory.CreateTraceExporter(context.Background(), params, cfg)
 	if err != nil {
 		return err
 	}
@@ -419,4 +402,202 @@ func (zs *ZipkinDataSender) GenConfigYAMLStr() string {
 
 func (zs *ZipkinDataSender) ProtocolName() string {
 	return "zipkin"
+}
+
+// prometheus
+
+type PrometheusDataSender struct {
+	host      string
+	port      int
+	namespace string
+	exporter  component.MetricsExporter
+}
+
+var _ MetricDataSender = (*PrometheusDataSender)(nil)
+
+func NewPrometheusDataSender(host string, port int) *PrometheusDataSender {
+	return &PrometheusDataSender{
+		host: host,
+		port: port,
+	}
+}
+
+func (pds *PrometheusDataSender) Start() error {
+	factory := prometheusexporter.NewFactory()
+	cfg := factory.CreateDefaultConfig().(*prometheusexporter.Config)
+	cfg.Endpoint = pds.endpoint()
+	cfg.Namespace = pds.namespace
+
+	exporter, err := factory.CreateMetricsExporter(context.Background(), component.ExporterCreateParams{}, cfg)
+	if err != nil {
+		return err
+	}
+
+	pds.exporter = exporter
+	return nil
+}
+
+func (pds *PrometheusDataSender) endpoint() string {
+	return fmt.Sprintf("%s:%d", pds.host, pds.port)
+}
+
+func (pds *PrometheusDataSender) SendMetrics(md pdata.Metrics) error {
+	return pds.exporter.ConsumeMetrics(context.Background(), md)
+}
+
+func (pds *PrometheusDataSender) Flush() {
+}
+
+func (pds *PrometheusDataSender) GenConfigYAMLStr() string {
+	format := `
+  prometheus:
+    config:
+      scrape_configs:
+        - job_name: 'testbed'
+          scrape_interval: 100ms
+          static_configs:
+            - targets: ['%s']
+`
+	return fmt.Sprintf(format, pds.endpoint())
+}
+
+func (pds *PrometheusDataSender) GetCollectorPort() int {
+	return pds.port
+}
+
+func (pds *PrometheusDataSender) ProtocolName() string {
+	return "prometheus"
+}
+
+type FluentBitFileLogWriter struct {
+	file        *os.File
+	parsersFile *os.File
+	host        string
+	port        int
+}
+
+// Ensure FluentBitFileLogWriter implements LogDataSender.
+var _ LogDataSender = (*FluentBitFileLogWriter)(nil)
+
+// NewFluentBitFileLogWriter creates a new data sender that will write log entries to a
+// file, to be tailed by FluentBit and sent to the collector.
+func NewFluentBitFileLogWriter(host string, port int) *FluentBitFileLogWriter {
+	file, err := ioutil.TempFile("", "perf-logs.json")
+	if err != nil {
+		panic("failed to create temp file")
+	}
+
+	parsersFile, err := ioutil.TempFile("", "parsers.json")
+	if err != nil {
+		panic("failed to create temp file")
+	}
+
+	f := &FluentBitFileLogWriter{
+		host:        host,
+		port:        port,
+		file:        file,
+		parsersFile: parsersFile,
+	}
+	f.setupParsers()
+	return f
+}
+
+func (f *FluentBitFileLogWriter) Start() error {
+	return nil
+}
+
+func (f *FluentBitFileLogWriter) setupParsers() {
+	_, err := f.parsersFile.Write([]byte(`
+[PARSER]
+    Name   json
+    Format json
+    Time_Key time
+    Time_Format %d/%m/%Y:%H:%M:%S %z
+`))
+	if err != nil {
+		panic("failed to write parsers")
+	}
+
+	f.parsersFile.Close()
+}
+
+func (f *FluentBitFileLogWriter) SendLogs(logs pdata.Logs) error {
+	for i := 0; i < logs.ResourceLogs().Len(); i++ {
+		for j := 0; j < logs.ResourceLogs().At(i).InstrumentationLibraryLogs().Len(); j++ {
+			ills := logs.ResourceLogs().At(i).InstrumentationLibraryLogs().At(j)
+			for k := 0; k < ills.Logs().Len(); k++ {
+				_, err := f.file.Write(append(f.convertLogToJSON(ills.Logs().At(k)), '\n'))
+				if err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func (f *FluentBitFileLogWriter) convertLogToJSON(lr pdata.LogRecord) []byte {
+	rec := map[string]string{
+		"time": time.Unix(0, int64(lr.Timestamp())).Format("02/01/2006:15:04:05Z"),
+	}
+
+	if !lr.Body().IsNil() {
+		rec["log"] = lr.Body().StringVal()
+	}
+
+	lr.Attributes().ForEach(func(k string, v pdata.AttributeValue) {
+		switch v.Type() {
+		case pdata.AttributeValueSTRING:
+			rec[k] = v.StringVal()
+		case pdata.AttributeValueINT:
+			rec[k] = strconv.FormatInt(v.IntVal(), 10)
+		case pdata.AttributeValueDOUBLE:
+			rec[k] = strconv.FormatFloat(v.DoubleVal(), 'f', -1, 64)
+		case pdata.AttributeValueBOOL:
+			rec[k] = strconv.FormatBool(v.BoolVal())
+		default:
+			panic("missing case")
+		}
+	})
+	b, err := json.Marshal(rec)
+	if err != nil {
+		panic("failed to write log: " + err.Error())
+	}
+	return b
+}
+
+func (f *FluentBitFileLogWriter) Flush() {
+	_ = f.file.Sync()
+}
+
+func (f *FluentBitFileLogWriter) GenConfigYAMLStr() string {
+	// Note that this generates a receiver config for agent.
+	return fmt.Sprintf(`
+  fluentforward:
+    endpoint: "%s:%d"`, f.host, f.port)
+}
+
+func (f *FluentBitFileLogWriter) Extensions() map[string]string {
+	return map[string]string{
+		"fluentbit": fmt.Sprintf(`
+  fluentbit:
+    executable_path: fluent-bit
+    tcp_endpoint: "%s:%d"
+    config: |
+      [SERVICE]
+        parsers_file %s
+      [INPUT]
+        Name tail
+        parser json
+        path %s
+`, f.host, f.port, f.parsersFile.Name(), f.file.Name()),
+	}
+}
+
+func (f *FluentBitFileLogWriter) GetCollectorPort() int {
+	return f.port
+}
+
+func (f *FluentBitFileLogWriter) ProtocolName() string {
+	return "fluentforward"
 }

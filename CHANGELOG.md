@@ -2,6 +2,108 @@
 
 ## Unreleased
 
+## 🛑 Breaking changes 🛑
+
+- **Update OTLP to v0.5.0, incompatible metrics protocol.**
+- Remove support for propagating summary metrics in OtelCollector.
+  - This is a temporary change, and will affect mostly OpenCensus users who use metrics.
+
+## v0.9.0 Beta
+
+## 🛑 Breaking changes 🛑
+
+- **Remove old base factories**:
+  - `ReceiverFactoryBase` (#1583)
+  - `ProcessorFactoryBase` (#1596)
+  - `ExporterFactoryBase` (#1630)
+- Remove logs factories and merge with normal factories (#1569)
+- Remove `reconnection_delay` from OpenCensus exporter (#1516)
+- Remove `ConsumerOld` interfaces (#1631)
+
+## 🚀 New components 🚀
+- `prometheusremotewrite` exporter: Send metrics data in Prometheus TimeSeries format to Cortex or any Prometheus (#1544)
+- `kafka` receiver: Receive traces from Kafka (#1410)
+
+## 💡 Enhancements 💡
+- `kafka` exporter: Enable queueing, retry, timeout (#1455)
+- Add `Headers` field in HTTPClientSettings (#1552)
+- Change OpenCensus receiver (#1556) and exporter (#1571) to the new interfaces
+- Add semantic attribute for `telemetry.auto.version` (#1578)
+- Add uptime and RSS memory self-observability metrics (#1549)
+- Support conversion for OpenCensus `SameProcessAsParentSpan` (#1629)
+- Access application version in components (#1559)
+- Make Kafka payload encoding configurable (#1584)
+
+## 🧰 Bug fixes 🧰
+- Stop further processing if `filterprocessor` filters all data (#1500)
+- `processscraper`: Use same scrape time for all data points coming from same process (#1539)
+- Ensure that time conversion for 0 returns nil timestamps or Time where IsZero returns true (#1550)
+- Fix multiple exporters panic (#1563)
+- Allow `attribute` processor for external use (#1574)
+- Do not duplicate filesystem metrics for devices with many mount points (#1617)
+
+## v0.8.0 Beta
+
+## 🚀 New components 🚀
+
+- `groupbytrace` processor that waits for a trace to be completed (#1362)
+
+## 💡 Enhancements 💡
+
+- Migrate `zipkin` receiver/exporter to the new interfaces (#1484)
+- Migrate `prometheus` receiver/exporter to the new interfaces (#1477, #1515)
+- Add new FactoryUnmarshaler support to all components, deprecate old way (#1468)
+- Update `fileexporter` to write data in OTLP (#1488)
+- Add extension factory helper (#1485)
+- Host scrapers: Use same scrape time for all data points coming from same source (#1473)
+- Make logs SeverityNumber publicly available (#1496)
+- Add recently included conventions for k8s and container resources (#1519)
+- Add new config StartTimeMetricRegex to `prometheus` receiver (#1511)
+- Convert Zipkin receiver and exporter to use OTLP (#1446)
+
+## 🧰 Bug fixes 🧰
+
+- Infer OpenCensus resource type based on OpenTelemetry's semantic conventions (#1462)
+- Fix log adapter in `prometheus` receiver (#1493)
+- Avoid frequent errors for process telemetry on Windows (#1487)
+
+## v0.7.0 Beta
+
+## 🚀 New components 🚀
+
+- Receivers
+  - `fluentfoward` runs a TCP server that accepts events via the [Fluent Forward protocol](https://github.com/fluent/fluentd/wiki/Forward-Protocol-Specification-v1) (#1173)
+- Exporters
+  - `kafka` exports traces to Kafka (#1439)
+- Extensions
+  - **Experimental** `fluentbit` facilitates running a FluentBit subprocess of the collector (#1381)
+
+## 💡 Enhancements 💡
+
+- Updated `golang/protobuf` from v1.3.5 to v1.4.2 (#1308)
+- Updated `opencensus-proto` from v0.2.1 to v0.3.0 (#1308)
+- Added round_robin `balancer_name` as an option to gRPC client settings (#1353)
+- `hostmetrics` receiver
+  - Switch to using perf counters to get disk io metrics on Windows (#1340)
+  - Add device filter for file system (#1379) and disk (#1378) scrapers
+  - Record process physical & virtual memory stats separately (#1403)
+  - Scrape system.disk.time on Windows (#1408)
+  - Add disk.pending_operations metric (#1428)
+  - Add network interface label to network metrics (#1377)
+- Add `exporterhelper` (#1351) and `processorhelper` (#1359) factories
+- Update OTLP to latest version (#1384)
+- Disable timeout, retry on failure and sending queue for `logging` exporter (#1400)
+- Add support for retry and sending queue for `jaeger` exporter (#1401)
+- Add batch size bytes metric to `batch` processor (#1270)
+- `otlp` receiver: Add Log Support (#1444)
+- Allow to configure read/write buffer sizes for http Client (#1447)
+- Update DB conventions to latest and add exception conventions (#1452)
+
+## 🧰 Bug fixes 🧰
+
+- Fix `resource` processor for old metrics (#1412)
+- `jaeger` receiver: Do not try to stop if failed to start. Collector service will do that (#1434)
+
 ## v0.6.0 Beta
 
 ## 🛑 Breaking changes 🛑

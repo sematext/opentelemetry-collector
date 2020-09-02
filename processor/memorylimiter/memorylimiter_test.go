@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//       http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -242,7 +242,7 @@ func TestLogMemoryPressureResponse(t *testing.T) {
 			ms.Alloc = currentMemAlloc
 		},
 	}
-	lp, err := processorhelper.NewLogProcessor(
+	lp, err := processorhelper.NewLogsProcessor(
 		&Config{
 			ProcessorSettings: configmodels.ProcessorSettings{
 				TypeVal: typeStr,
@@ -256,7 +256,7 @@ func TestLogMemoryPressureResponse(t *testing.T) {
 	require.NoError(t, err)
 
 	ctx := context.Background()
-	ld := data.NewLogs()
+	ld := pdata.NewLogs()
 
 	// Below memAllocLimit.
 	currentMemAlloc = 800

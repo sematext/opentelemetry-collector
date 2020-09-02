@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//       http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -18,16 +18,23 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"time"
 
+	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/config"
+	sdConfig "github.com/prometheus/prometheus/discovery/config"
+	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"go.uber.org/zap"
 
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/config/configgrpc"
 	"go.opentelemetry.io/collector/config/configmodels"
 	"go.opentelemetry.io/collector/config/confignet"
+	"go.opentelemetry.io/collector/consumer"
 	"go.opentelemetry.io/collector/receiver/jaegerreceiver"
 	"go.opentelemetry.io/collector/receiver/opencensusreceiver"
 	"go.opentelemetry.io/collector/receiver/otlpreceiver"
+	"go.opentelemetry.io/collector/receiver/prometheusreceiver"
 	"go.opentelemetry.io/collector/receiver/zipkinreceiver"
 )
 
@@ -37,7 +44,7 @@ import (
 // from Collector and the corresponding entity in the Collector that sends this data is
 // an exporter.
 type DataReceiver interface {
-	Start(tc *MockTraceConsumer, mc *MockMetricConsumer) error
+	Start(tc consumer.TraceConsumer, mc consumer.MetricsConsumer, lc consumer.LogsConsumer) error
 	Stop() error
 
 	// Generate a config string to place in exporter part of collector config
@@ -92,16 +99,17 @@ func NewOCDataReceiver(port int) *OCDataReceiver {
 	return &OCDataReceiver{DataReceiverBase: DataReceiverBase{Port: port}}
 }
 
-func (or *OCDataReceiver) Start(tc *MockTraceConsumer, mc *MockMetricConsumer) error {
-	factory := opencensusreceiver.Factory{}
+func (or *OCDataReceiver) Start(tc consumer.TraceConsumer, mc consumer.MetricsConsumer, _ consumer.LogsConsumer) error {
+	factory := opencensusreceiver.NewFactory()
 	cfg := factory.CreateDefaultConfig().(*opencensusreceiver.Config)
 	cfg.SetName(or.ProtocolName())
 	cfg.NetAddr = confignet.NetAddr{Endpoint: fmt.Sprintf("localhost:%d", or.Port), Transport: "tcp"}
 	var err error
-	if or.traceReceiver, err = factory.CreateTraceReceiver(context.Background(), zap.NewNop(), cfg, tc); err != nil {
+	params := component.ReceiverCreateParams{Logger: zap.NewNop()}
+	if or.traceReceiver, err = factory.CreateTraceReceiver(context.Background(), params, cfg, tc); err != nil {
 		return err
 	}
-	if or.metricsReceiver, err = factory.CreateMetricsReceiver(context.Background(), zap.NewNop(), cfg, mc); err != nil {
+	if or.metricsReceiver, err = factory.CreateMetricsReceiver(context.Background(), params, cfg, mc); err != nil {
 		return err
 	}
 	if err = or.traceReceiver.Start(context.Background(), or); err != nil {
@@ -138,13 +146,15 @@ type JaegerDataReceiver struct {
 	receiver component.TraceReceiver
 }
 
+var _ DataReceiver = (*JaegerDataReceiver)(nil)
+
 const DefaultJaegerPort = 14250
 
 func NewJaegerDataReceiver(port int) *JaegerDataReceiver {
 	return &JaegerDataReceiver{DataReceiverBase: DataReceiverBase{Port: port}}
 }
 
-func (jr *JaegerDataReceiver) Start(tc *MockTraceConsumer, _ *MockMetricConsumer) error {
+func (jr *JaegerDataReceiver) Start(tc consumer.TraceConsumer, _ consumer.MetricsConsumer, _ consumer.LogsConsumer) error {
 	factory := jaegerreceiver.NewFactory()
 	cfg := factory.CreateDefaultConfig().(*jaegerreceiver.Config)
 	cfg.SetName(jr.ProtocolName())
@@ -182,6 +192,7 @@ type OTLPDataReceiver struct {
 	DataReceiverBase
 	traceReceiver   component.TraceReceiver
 	metricsReceiver component.MetricsReceiver
+	logReceiver     component.LogsReceiver
 }
 
 // Ensure OTLPDataReceiver implements DataReceiver.
@@ -195,7 +206,7 @@ func NewOTLPDataReceiver(port int) *OTLPDataReceiver {
 	return &OTLPDataReceiver{DataReceiverBase: DataReceiverBase{Port: port}}
 }
 
-func (or *OTLPDataReceiver) Start(tc *MockTraceConsumer, mc *MockMetricConsumer) error {
+func (or *OTLPDataReceiver) Start(tc consumer.TraceConsumer, mc consumer.MetricsConsumer, lc consumer.LogsConsumer) error {
 	factory := otlpreceiver.NewFactory()
 	cfg := factory.CreateDefaultConfig().(*otlpreceiver.Config)
 	cfg.SetName(or.ProtocolName())
@@ -209,10 +220,17 @@ func (or *OTLPDataReceiver) Start(tc *MockTraceConsumer, mc *MockMetricConsumer)
 	if or.metricsReceiver, err = factory.CreateMetricsReceiver(context.Background(), params, cfg, mc); err != nil {
 		return err
 	}
+	if or.logReceiver, err = factory.CreateLogsReceiver(context.Background(), params, cfg, lc); err != nil {
+		return err
+	}
+
 	if err = or.traceReceiver.Start(context.Background(), or); err != nil {
 		return err
 	}
-	return or.metricsReceiver.Start(context.Background(), or)
+	if err = or.metricsReceiver.Start(context.Background(), or); err != nil {
+		return err
+	}
+	return or.logReceiver.Start(context.Background(), or)
 }
 
 func (or *OTLPDataReceiver) Stop() error {
@@ -243,19 +261,23 @@ type ZipkinDataReceiver struct {
 	receiver component.TraceReceiver
 }
 
+var _ DataReceiver = (*ZipkinDataReceiver)(nil)
+
 const DefaultZipkinAddressPort = 9411
 
 func NewZipkinDataReceiver(port int) *ZipkinDataReceiver {
 	return &ZipkinDataReceiver{DataReceiverBase: DataReceiverBase{Port: port}}
 }
 
-func (zr *ZipkinDataReceiver) Start(tc *MockTraceConsumer, _ *MockMetricConsumer) error {
-	factory := zipkinreceiver.Factory{}
+func (zr *ZipkinDataReceiver) Start(tc consumer.TraceConsumer, _ consumer.MetricsConsumer, _ consumer.LogsConsumer) error {
+	factory := zipkinreceiver.NewFactory()
 	cfg := factory.CreateDefaultConfig().(*zipkinreceiver.Config)
 	cfg.SetName(zr.ProtocolName())
 	cfg.Endpoint = fmt.Sprintf("localhost:%d", zr.Port)
+
+	params := component.ReceiverCreateParams{Logger: zap.NewNop()}
 	var err error
-	zr.receiver, err = factory.CreateTraceReceiver(context.Background(), zap.NewNop(), cfg, tc)
+	zr.receiver, err = factory.CreateTraceReceiver(context.Background(), params, cfg, tc)
 
 	if err != nil {
 		return err
@@ -278,4 +300,62 @@ func (zr *ZipkinDataReceiver) GenConfigYAMLStr() string {
 
 func (zr *ZipkinDataReceiver) ProtocolName() string {
 	return "zipkin"
+}
+
+// prometheus
+
+type PrometheusDataReceiver struct {
+	DataReceiverBase
+	receiver component.MetricsReceiver
+}
+
+var _ DataReceiver = (*PrometheusDataReceiver)(nil)
+
+func NewPrometheusDataReceiver(port int) *PrometheusDataReceiver {
+	return &PrometheusDataReceiver{DataReceiverBase: DataReceiverBase{Port: port}}
+}
+
+func (dr *PrometheusDataReceiver) Start(_ consumer.TraceConsumer, mc consumer.MetricsConsumer, _ consumer.LogsConsumer) error {
+	factory := prometheusreceiver.NewFactory()
+	cfg := factory.CreateDefaultConfig().(*prometheusreceiver.Config)
+	addr := fmt.Sprintf("0.0.0.0:%d", dr.Port)
+	cfg.PrometheusConfig = &config.Config{
+		ScrapeConfigs: []*config.ScrapeConfig{{
+			JobName:        "testbed-job",
+			ScrapeInterval: model.Duration(100 * time.Millisecond),
+			ScrapeTimeout:  model.Duration(time.Second),
+			ServiceDiscoveryConfig: sdConfig.ServiceDiscoveryConfig{
+				StaticConfigs: []*targetgroup.Group{{
+					Targets: []model.LabelSet{{
+						"__address__":      model.LabelValue(addr),
+						"__scheme__":       "http",
+						"__metrics_path__": "/metrics",
+					}},
+				}},
+			},
+		}},
+	}
+	var err error
+	dr.receiver, err = factory.CreateMetricsReceiver(context.Background(), component.ReceiverCreateParams{}, cfg, mc)
+	if err != nil {
+		return err
+	}
+	return dr.receiver.Start(context.Background(), dr)
+}
+
+func (dr *PrometheusDataReceiver) Stop() error {
+	return dr.receiver.Shutdown(context.Background())
+}
+
+// Generate exporter yaml
+func (dr *PrometheusDataReceiver) GenConfigYAMLStr() string {
+	format := `
+  prometheus:
+    endpoint: "localhost:%d"
+`
+	return fmt.Sprintf(format, dr.Port)
+}
+
+func (dr *PrometheusDataReceiver) ProtocolName() string {
+	return "prometheus"
 }

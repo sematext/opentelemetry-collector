@@ -29,8 +29,10 @@ import (
 	"go.opentelemetry.io/collector/exporter/exporterhelper"
 )
 
+// MetricsEndpoint todo Doc Comment
 type MetricsEndpoint string
 
+// Constants
 const (
 	USMetrics MetricsEndpoint = "https://spm-receiver.sematext.com:443/write?db=metrics&v=3.0.0&sct=APP"
 	EUMetrics MetricsEndpoint = "https://spm-receiver.eu.sematext.com:443/write?db=metrics&v=3.0.0&sct=APP"

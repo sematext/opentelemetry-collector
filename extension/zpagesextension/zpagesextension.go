@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//       http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -31,7 +31,7 @@ type zpagesExtension struct {
 	server http.Server
 }
 
-func (zpe *zpagesExtension) Start(ctx context.Context, host component.Host) error {
+func (zpe *zpagesExtension) Start(_ context.Context, host component.Host) error {
 	zPagesMux := http.NewServeMux()
 	zpages.Handle(zPagesMux, "/debug")
 
@@ -67,11 +67,9 @@ func (zpe *zpagesExtension) Shutdown(context.Context) error {
 	return zpe.server.Close()
 }
 
-func newServer(config Config, logger *zap.Logger) (*zpagesExtension, error) {
-	zpe := &zpagesExtension{
+func newServer(config Config, logger *zap.Logger) *zpagesExtension {
+	return &zpagesExtension{
 		config: config,
 		logger: logger,
 	}
-
-	return zpe, nil
 }

@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//       http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -190,7 +190,7 @@ func TestMetricsQueueProcessor_NoEnqueueOnPermanentError(t *testing.T) {
 	require.NoError(t, err)
 	defer doneFn()
 
-	md := pdatautil.MetricsFromInternalMetrics(testdata.GenerateMetricDataTwoMetrics())
+	md := pdatautil.MetricsFromInternalMetrics(testdata.GenerateMetricsTwoMetrics())
 
 	mockP := newMockConcurrentSpanProcessor()
 	mockP.updateError(consumererror.Permanent(errors.New("bad data")))
@@ -222,7 +222,7 @@ func TestMetricsQueueProcessor_NoEnqueueOnNoRetry(t *testing.T) {
 	require.NoError(t, err)
 	defer doneFn()
 
-	md := pdatautil.MetricsFromInternalMetrics(testdata.GenerateMetricDataTwoMetrics())
+	md := pdatautil.MetricsFromInternalMetrics(testdata.GenerateMetricsTwoMetrics())
 
 	mockP := newMockConcurrentSpanProcessor()
 	mockP.updateError(errors.New("transient error"))
@@ -254,7 +254,7 @@ func TestMetricsQueueProcessor_EnqueueOnError(t *testing.T) {
 	require.NoError(t, err)
 	defer doneFn()
 
-	md := pdatautil.MetricsFromInternalMetrics(testdata.GenerateMetricDataTwoMetrics())
+	md := pdatautil.MetricsFromInternalMetrics(testdata.GenerateMetricsTwoMetrics())
 
 	mockP := newMockConcurrentSpanProcessor()
 	mockP.updateError(errors.New("transient error"))
@@ -353,7 +353,7 @@ func TestMetricsQueueProcessorHappyPath(t *testing.T) {
 	wantBatches := 10
 	wantMetricPoints := 2 * 20
 	for i := 0; i < wantBatches; i++ {
-		md := pdatautil.MetricsFromInternalMetrics(testdata.GenerateMetricDataTwoMetrics())
+		md := pdatautil.MetricsFromInternalMetrics(testdata.GenerateMetricsTwoMetrics())
 		mockP.run(func() {
 			require.NoError(t, qp.ConsumeMetrics(context.Background(), md))
 		})

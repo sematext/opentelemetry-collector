@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//       http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -23,12 +23,14 @@ import (
 	"testing"
 
 	metricspb "github.com/census-instrumentation/opencensus-proto/gen-go/metrics/v1"
-	"github.com/golang/protobuf/ptypes/timestamp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/consumer/consumerdata"
+	"go.opentelemetry.io/collector/consumer/pdatautil"
 )
 
 func TestPrometheusExporter(t *testing.T) {
@@ -52,21 +54,24 @@ func TestPrometheusExporter(t *testing.T) {
 		},
 	}
 
-	factory := Factory{}
+	factory := NewFactory()
+	creationParams := component.ExporterCreateParams{Logger: zap.NewNop()}
 	for _, tt := range tests {
 		// Run it a few times to ensure that shutdowns exit cleanly.
 		for j := 0; j < 3; j++ {
-			consumer, err := factory.CreateMetricsExporter(zap.NewNop(), tt.config)
+			exp, err := factory.CreateMetricsExporter(context.Background(), creationParams, tt.config)
 
 			if tt.wantErr != "" {
-				require.Equal(t, tt.wantErr, err.Error())
+				require.Error(t, err)
+				assert.Equal(t, tt.wantErr, err.Error())
 				continue
+			} else {
+				require.NoError(t, err)
 			}
 
-			assert.NotNil(t, consumer)
-
+			assert.NotNil(t, exp)
 			require.Nil(t, err)
-			require.NoError(t, consumer.Shutdown(context.Background()))
+			require.NoError(t, exp.Shutdown(context.Background()))
 		}
 	}
 }
@@ -81,16 +86,20 @@ func TestPrometheusExporter_endToEnd(t *testing.T) {
 		Endpoint: ":7777",
 	}
 
-	factory := Factory{}
-	consumer, err := factory.CreateMetricsExporter(zap.NewNop(), config)
+	factory := NewFactory()
+	creationParams := component.ExporterCreateParams{Logger: zap.NewNop()}
+	exp, err := factory.CreateMetricsExporter(context.Background(), creationParams, config)
 	assert.NoError(t, err)
 
-	defer consumer.Shutdown(context.Background())
+	t.Cleanup(func() {
+		require.NoError(t, exp.Shutdown(context.Background()))
+	})
 
-	assert.NotNil(t, consumer)
+	assert.NotNil(t, exp)
 
 	for delta := 0; delta <= 20; delta += 10 {
-		consumer.ConsumeMetricsData(context.Background(), consumerdata.MetricsData{Metrics: metricBuilder(int64(delta))})
+		md := pdatautil.MetricsFromMetricsData([]consumerdata.MetricsData{{Metrics: metricBuilder(int64(delta))}})
+		assert.NoError(t, exp.ConsumeMetrics(context.Background(), md))
 
 		res, err := http.Get("http://localhost:7777/metrics")
 		require.NoError(t, err, "Failed to perform a scrape")
@@ -130,7 +139,7 @@ func metricBuilder(delta int64) []*metricspb.Metric {
 			},
 			Timeseries: []*metricspb.TimeSeries{
 				{
-					StartTimestamp: &timestamp.Timestamp{
+					StartTimestamp: &timestamppb.Timestamp{
 						Seconds: 1543160298,
 						Nanos:   100000090,
 					},
@@ -140,7 +149,7 @@ func metricBuilder(delta int64) []*metricspb.Metric {
 					},
 					Points: []*metricspb.Point{
 						{
-							Timestamp: &timestamp.Timestamp{
+							Timestamp: &timestamppb.Timestamp{
 								Seconds: 1543160298,
 								Nanos:   100000997,
 							},
@@ -165,7 +174,7 @@ func metricBuilder(delta int64) []*metricspb.Metric {
 			},
 			Timeseries: []*metricspb.TimeSeries{
 				{
-					StartTimestamp: &timestamp.Timestamp{
+					StartTimestamp: &timestamppb.Timestamp{
 						Seconds: 1543160298,
 						Nanos:   100000090,
 					},
@@ -175,7 +184,7 @@ func metricBuilder(delta int64) []*metricspb.Metric {
 					},
 					Points: []*metricspb.Point{
 						{
-							Timestamp: &timestamp.Timestamp{
+							Timestamp: &timestamppb.Timestamp{
 								Seconds: 1543160298,
 								Nanos:   100000997,
 							},

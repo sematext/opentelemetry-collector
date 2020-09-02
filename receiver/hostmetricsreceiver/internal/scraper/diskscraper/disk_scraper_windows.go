@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//       http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,35 +16,50 @@ package diskscraper
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"time"
 
 	"go.opentelemetry.io/collector/component/componenterror"
 	"go.opentelemetry.io/collector/consumer/pdata"
+	"go.opentelemetry.io/collector/internal/processor/filterset"
+	"go.opentelemetry.io/collector/receiver/hostmetricsreceiver/internal"
+	"go.opentelemetry.io/collector/receiver/hostmetricsreceiver/internal/third_party/telegraf/win_perf_counters"
 	"go.opentelemetry.io/collector/receiver/hostmetricsreceiver/internal/windows/pdh"
 )
 
 const (
-	logicalDiskReadsPerSecPath      = `\LogicalDisk(*)\Disk Reads/sec`
-	logicalDiskWritesPerSecPath     = `\LogicalDisk(*)\Disk Writes/sec`
+	logicalDiskReadsPerSecPath  = `\LogicalDisk(*)\Disk Reads/sec`
+	logicalDiskWritesPerSecPath = `\LogicalDisk(*)\Disk Writes/sec`
+
 	logicalDiskReadBytesPerSecPath  = `\LogicalDisk(*)\Disk Read Bytes/sec`
 	logicalDiskWriteBytesPerSecPath = `\LogicalDisk(*)\Disk Write Bytes/sec`
+
+	logicalAvgDiskSecsPerReadPath  = `\LogicalDisk(*)\Avg. Disk sec/Read`
+	logicalAvgDiskSecsPerWritePath = `\LogicalDisk(*)\Avg. Disk sec/Write`
+
+	logicalDiskQueueLengthPath = `\LogicalDisk(*)\Current Disk Queue Length`
 )
 
 // scraper for Disk Metrics
 type scraper struct {
-	config *Config
-
+	config         *Config
 	startTime      pdata.TimestampUnixNano
 	prevScrapeTime time.Time
+	includeFS      filterset.FilterSet
+	excludeFS      filterset.FilterSet
 
 	diskReadBytesPerSecCounter  pdh.PerfCounterScraper
 	diskWriteBytesPerSecCounter pdh.PerfCounterScraper
 	diskReadsPerSecCounter      pdh.PerfCounterScraper
 	diskWritesPerSecCounter     pdh.PerfCounterScraper
+	avgDiskSecsPerReadCounter   pdh.PerfCounterScraper
+	avgDiskSecsPerWriteCounter  pdh.PerfCounterScraper
+	diskQueueLengthCounter      pdh.PerfCounterScraper
 
-	cumulativeDiskIO  cumulativeDiskValues
-	cumulativeDiskOps cumulativeDiskValues
+	cumulativeDiskIO   cumulativeDiskValues
+	cumulativeDiskOps  cumulativeDiskValues
+	cumulativeDiskTime cumulativeDiskValues
 }
 
 type cumulativeDiskValues map[string]*value
@@ -65,17 +80,36 @@ type value struct {
 }
 
 // newDiskScraper creates a Disk Scraper
-func newDiskScraper(_ context.Context, cfg *Config) *scraper {
-	return &scraper{
-		config:            cfg,
-		cumulativeDiskIO:  map[string]*value{},
-		cumulativeDiskOps: map[string]*value{},
+func newDiskScraper(_ context.Context, cfg *Config) (*scraper, error) {
+	scraper := &scraper{
+		config:             cfg,
+		cumulativeDiskIO:   map[string]*value{},
+		cumulativeDiskOps:  map[string]*value{},
+		cumulativeDiskTime: map[string]*value{},
 	}
+
+	var err error
+
+	if len(cfg.Include.Devices) > 0 {
+		scraper.includeFS, err = filterset.CreateFilterSet(cfg.Include.Devices, &cfg.Include.Config)
+		if err != nil {
+			return nil, fmt.Errorf("error creating device include filters: %w", err)
+		}
+	}
+
+	if len(cfg.Exclude.Devices) > 0 {
+		scraper.excludeFS, err = filterset.CreateFilterSet(cfg.Exclude.Devices, &cfg.Exclude.Config)
+		if err != nil {
+			return nil, fmt.Errorf("error creating device exclude filters: %w", err)
+		}
+	}
+
+	return scraper, nil
 }
 
 // Initialize
 func (s *scraper) Initialize(_ context.Context) error {
-	s.startTime = pdata.TimestampUnixNano(uint64(time.Now().UnixNano()))
+	s.startTime = internal.TimeToUnixNano(time.Now())
 	s.prevScrapeTime = time.Now()
 
 	var err error
@@ -96,6 +130,21 @@ func (s *scraper) Initialize(_ context.Context) error {
 	}
 
 	s.diskWritesPerSecCounter, err = pdh.NewPerfCounter(logicalDiskWritesPerSecPath, true)
+	if err != nil {
+		return err
+	}
+
+	s.avgDiskSecsPerReadCounter, err = pdh.NewPerfCounter(logicalAvgDiskSecsPerReadPath, true)
+	if err != nil {
+		return err
+	}
+
+	s.avgDiskSecsPerWriteCounter, err = pdh.NewPerfCounter(logicalAvgDiskSecsPerWritePath, true)
+	if err != nil {
+		return err
+	}
+
+	s.diskQueueLengthCounter, err = pdh.NewPerfCounter(logicalDiskQueueLengthPath, true)
 	if err != nil {
 		return err
 	}
@@ -131,6 +180,24 @@ func (s *scraper) Close(_ context.Context) error {
 		}
 	}
 
+	if s.avgDiskSecsPerReadCounter != nil && !reflect.ValueOf(s.avgDiskSecsPerReadCounter).IsNil() {
+		if err := s.avgDiskSecsPerReadCounter.Close(); err != nil {
+			errors = append(errors, err)
+		}
+	}
+
+	if s.avgDiskSecsPerWriteCounter != nil && !reflect.ValueOf(s.avgDiskSecsPerWriteCounter).IsNil() {
+		if err := s.avgDiskSecsPerWriteCounter.Close(); err != nil {
+			errors = append(errors, err)
+		}
+	}
+
+	if s.diskQueueLengthCounter != nil && !reflect.ValueOf(s.diskQueueLengthCounter).IsNil() {
+		if err := s.diskQueueLengthCounter.Close(); err != nil {
+			errors = append(errors, err)
+		}
+	}
+
 	return componenterror.CombineErrors(errors)
 }
 
@@ -139,29 +206,31 @@ func (s *scraper) ScrapeMetrics(_ context.Context) (pdata.MetricSlice, error) {
 	now := time.Now()
 	durationSinceLastScraped := now.Sub(s.prevScrapeTime).Seconds()
 	s.prevScrapeTime = now
+	nowUnixTime := pdata.TimestampUnixNano(uint64(now.UnixNano()))
 
 	metrics := pdata.NewMetricSlice()
 
 	var errors []error
 
-	err := s.scrapeAndAppendDiskIOMetric(metrics, durationSinceLastScraped)
+	err := s.scrapeAndAppendDiskIOMetric(metrics, nowUnixTime, durationSinceLastScraped)
 	if err != nil {
 		errors = append(errors, err)
 	}
 
-	err = s.scrapeAndAppendDiskOpsMetric(metrics, durationSinceLastScraped)
+	err = s.scrapeAndAppendDiskOpsMetric(metrics, nowUnixTime, durationSinceLastScraped)
 	if err != nil {
 		errors = append(errors, err)
 	}
 
-	if len(errors) > 0 {
-		return metrics, componenterror.CombineErrors(errors)
+	err = s.scrapeAndAppendDiskPendingOperationsMetric(metrics, nowUnixTime)
+	if err != nil {
+		errors = append(errors, err)
 	}
 
-	return metrics, nil
+	return metrics, componenterror.CombineErrors(errors)
 }
 
-func (s *scraper) scrapeAndAppendDiskIOMetric(metrics pdata.MetricSlice, durationSinceLastScraped float64) error {
+func (s *scraper) scrapeAndAppendDiskIOMetric(metrics pdata.MetricSlice, now pdata.TimestampUnixNano, durationSinceLastScraped float64) error {
 	diskReadBytesPerSecValues, err := s.diskReadBytesPerSecCounter.ScrapeData()
 	if err != nil {
 		return err
@@ -173,34 +242,28 @@ func (s *scraper) scrapeAndAppendDiskIOMetric(metrics pdata.MetricSlice, duratio
 	}
 
 	for _, diskReadBytesPerSec := range diskReadBytesPerSecValues {
-		s.cumulativeDiskIO.getOrAdd(diskReadBytesPerSec.InstanceName).read += (diskReadBytesPerSec.Value * durationSinceLastScraped)
+		if s.includeDevice(diskReadBytesPerSec.InstanceName) {
+			s.cumulativeDiskIO.getOrAdd(diskReadBytesPerSec.InstanceName).read += diskReadBytesPerSec.Value * durationSinceLastScraped
+		}
 	}
 
 	for _, diskWriteBytesPerSec := range diskWriteBytesPerSecValues {
-		s.cumulativeDiskIO.getOrAdd(diskWriteBytesPerSec.InstanceName).write += (diskWriteBytesPerSec.Value * durationSinceLastScraped)
+		if s.includeDevice(diskWriteBytesPerSec.InstanceName) {
+			s.cumulativeDiskIO.getOrAdd(diskWriteBytesPerSec.InstanceName).write += diskWriteBytesPerSec.Value * durationSinceLastScraped
+		}
+	}
+
+	if len(s.cumulativeDiskIO) == 0 {
+		return nil
 	}
 
 	idx := metrics.Len()
 	metrics.Resize(idx + 1)
-	initializeDiskIOMetric(metrics.At(idx), s.startTime, s.cumulativeDiskIO)
+	initializeDiskInt64Metric(metrics.At(idx), diskIODescriptor, s.startTime, now, s.cumulativeDiskIO)
 	return nil
 }
 
-func initializeDiskIOMetric(metric pdata.Metric, startTime pdata.TimestampUnixNano, io cumulativeDiskValues) {
-	diskIODescriptor.CopyTo(metric.MetricDescriptor())
-
-	idps := metric.Int64DataPoints()
-	idps.Resize(2 * len(io))
-
-	idx := 0
-	for device, value := range io {
-		initializeDataPoint(idps.At(idx+0), startTime, device, readDirectionLabelValue, int64(value.read))
-		initializeDataPoint(idps.At(idx+1), startTime, device, writeDirectionLabelValue, int64(value.write))
-		idx += 2
-	}
-}
-
-func (s *scraper) scrapeAndAppendDiskOpsMetric(metrics pdata.MetricSlice, durationSinceLastScraped float64) error {
+func (s *scraper) scrapeAndAppendDiskOpsMetric(metrics pdata.MetricSlice, now pdata.TimestampUnixNano, durationSinceLastScraped float64) error {
 	diskReadsPerSecValues, err := s.diskReadsPerSecCounter.ScrapeData()
 	if err != nil {
 		return err
@@ -211,39 +274,165 @@ func (s *scraper) scrapeAndAppendDiskOpsMetric(metrics pdata.MetricSlice, durati
 		return err
 	}
 
+	avgDiskSecsPerReadValues, err := s.avgDiskSecsPerReadCounter.ScrapeData()
+	if err != nil {
+		return err
+	}
+	avgDiskSecsPerReadMap := toMap(avgDiskSecsPerReadValues)
+
+	avgDiskSecsPerWriteValues, err := s.avgDiskSecsPerWriteCounter.ScrapeData()
+	if err != nil {
+		return err
+	}
+	avgDiskSecsPerWriteMap := toMap(avgDiskSecsPerWriteValues)
+
 	for _, diskReadsPerSec := range diskReadsPerSecValues {
-		s.cumulativeDiskOps.getOrAdd(diskReadsPerSec.InstanceName).read += (diskReadsPerSec.Value * durationSinceLastScraped)
+		device := diskReadsPerSec.InstanceName
+		if !s.includeDevice(device) {
+			continue
+		}
+
+		deltaReadOperations := diskReadsPerSec.Value * durationSinceLastScraped
+		s.cumulativeDiskOps.getOrAdd(device).read += deltaReadOperations
+		if avgDiskSecsPerRead, ok := avgDiskSecsPerReadMap[device]; ok {
+			s.cumulativeDiskTime.getOrAdd(device).read += deltaReadOperations * avgDiskSecsPerRead
+		}
 	}
 
 	for _, diskWritesPerSec := range diskWritesPerSecValues {
-		s.cumulativeDiskOps.getOrAdd(diskWritesPerSec.InstanceName).write += (diskWritesPerSec.Value * durationSinceLastScraped)
+		device := diskWritesPerSec.InstanceName
+		if !s.includeDevice(device) {
+			continue
+		}
+
+		deltaWriteOperations := diskWritesPerSec.Value * durationSinceLastScraped
+		s.cumulativeDiskOps.getOrAdd(device).write += deltaWriteOperations
+		if avgDiskSecsPerWrite, ok := avgDiskSecsPerWriteMap[device]; ok {
+			s.cumulativeDiskTime.getOrAdd(device).write += deltaWriteOperations * avgDiskSecsPerWrite
+		}
+	}
+
+	idx := metrics.Len()
+
+	if len(s.cumulativeDiskIO) > 0 {
+		metrics.Resize(idx + 1)
+		initializeDiskInt64Metric(metrics.At(idx), diskOpsDescriptor, s.startTime, now, s.cumulativeDiskOps)
+		idx++
+	}
+
+	if len(s.cumulativeDiskTime) > 0 {
+		metrics.Resize(idx + 1)
+		initializeDiskDoubleMetric(metrics.At(idx), diskTimeDescriptor, s.startTime, now, s.cumulativeDiskTime)
+		idx++
+	}
+
+	return nil
+}
+
+func (s *scraper) scrapeAndAppendDiskPendingOperationsMetric(metrics pdata.MetricSlice, now pdata.TimestampUnixNano) error {
+	diskQueueLengthValues, err := s.diskQueueLengthCounter.ScrapeData()
+	if err != nil {
+		return err
+	}
+
+	filteredDiskQueueLengthValues := s.filterByDevice(diskQueueLengthValues)
+	if len(filteredDiskQueueLengthValues) == 0 {
+		return nil
 	}
 
 	idx := metrics.Len()
 	metrics.Resize(idx + 1)
-	initializeDiskOpsMetric(metrics.At(idx), s.startTime, s.cumulativeDiskOps)
+	initializeDiskPendingOperationsMetric(metrics.At(idx), now, filteredDiskQueueLengthValues)
 	return nil
 }
 
-func initializeDiskOpsMetric(metric pdata.Metric, startTime pdata.TimestampUnixNano, ops cumulativeDiskValues) {
-	diskOpsDescriptor.CopyTo(metric.MetricDescriptor())
+func initializeDiskInt64Metric(metric pdata.Metric, descriptor pdata.Metric, startTime, now pdata.TimestampUnixNano, ops cumulativeDiskValues) {
+	descriptor.CopyTo(metric)
 
-	idps := metric.Int64DataPoints()
+	idps := metric.IntSum().DataPoints()
 	idps.Resize(2 * len(ops))
 
 	idx := 0
 	for device, value := range ops {
-		initializeDataPoint(idps.At(idx+0), startTime, device, readDirectionLabelValue, int64(value.read))
-		initializeDataPoint(idps.At(idx+1), startTime, device, writeDirectionLabelValue, int64(value.write))
+		initializeInt64DataPoint(idps.At(idx+0), startTime, now, device, readDirectionLabelValue, int64(value.read))
+		initializeInt64DataPoint(idps.At(idx+1), startTime, now, device, writeDirectionLabelValue, int64(value.write))
 		idx += 2
 	}
 }
 
-func initializeDataPoint(dataPoint pdata.Int64DataPoint, startTime pdata.TimestampUnixNano, deviceLabel string, directionLabel string, value int64) {
+func initializeDiskDoubleMetric(metric pdata.Metric, descriptor pdata.Metric, startTime, now pdata.TimestampUnixNano, ops cumulativeDiskValues) {
+	descriptor.CopyTo(metric)
+
+	ddps := metric.DoubleSum().DataPoints()
+	ddps.Resize(2 * len(ops))
+
+	idx := 0
+	for device, value := range ops {
+		initializeDoubleDataPoint(ddps.At(idx+0), startTime, now, device, readDirectionLabelValue, value.read)
+		initializeDoubleDataPoint(ddps.At(idx+1), startTime, now, device, writeDirectionLabelValue, value.write)
+		idx += 2
+	}
+}
+
+func initializeDiskPendingOperationsMetric(metric pdata.Metric, now pdata.TimestampUnixNano, avgDiskQueueLengthValues []win_perf_counters.CounterValue) {
+	diskPendingOperationsDescriptor.CopyTo(metric)
+
+	idps := metric.IntSum().DataPoints()
+	idps.Resize(len(avgDiskQueueLengthValues))
+
+	for idx, avgDiskQueueLengthValue := range avgDiskQueueLengthValues {
+		initializeDiskPendingDataPoint(idps.At(idx), now, avgDiskQueueLengthValue.InstanceName, int64(avgDiskQueueLengthValue.Value))
+	}
+}
+
+func initializeInt64DataPoint(dataPoint pdata.IntDataPoint, startTime, now pdata.TimestampUnixNano, deviceLabel string, directionLabel string, value int64) {
 	labelsMap := dataPoint.LabelsMap()
 	labelsMap.Insert(deviceLabelName, deviceLabel)
 	labelsMap.Insert(directionLabelName, directionLabel)
 	dataPoint.SetStartTime(startTime)
-	dataPoint.SetTimestamp(pdata.TimestampUnixNano(uint64(time.Now().UnixNano())))
+	dataPoint.SetTimestamp(now)
 	dataPoint.SetValue(value)
+}
+
+func initializeDoubleDataPoint(dataPoint pdata.DoubleDataPoint, startTime, now pdata.TimestampUnixNano, deviceLabel string, directionLabel string, value float64) {
+	labelsMap := dataPoint.LabelsMap()
+	labelsMap.Insert(deviceLabelName, deviceLabel)
+	labelsMap.Insert(directionLabelName, directionLabel)
+	dataPoint.SetStartTime(startTime)
+	dataPoint.SetTimestamp(now)
+	dataPoint.SetValue(value)
+}
+
+func initializeDiskPendingDataPoint(dataPoint pdata.IntDataPoint, now pdata.TimestampUnixNano, deviceLabel string, value int64) {
+	labelsMap := dataPoint.LabelsMap()
+	labelsMap.Insert(deviceLabelName, deviceLabel)
+	dataPoint.SetTimestamp(now)
+	dataPoint.SetValue(value)
+}
+
+func (s *scraper) filterByDevice(values []win_perf_counters.CounterValue) []win_perf_counters.CounterValue {
+	if s.includeFS == nil && s.excludeFS == nil {
+		return values
+	}
+
+	filteredValues := make([]win_perf_counters.CounterValue, 0, len(values))
+	for _, value := range values {
+		if s.includeDevice(value.InstanceName) {
+			filteredValues = append(filteredValues, value)
+		}
+	}
+	return filteredValues
+}
+
+func (s *scraper) includeDevice(deviceName string) bool {
+	return (s.includeFS == nil || s.includeFS.Matches(deviceName)) &&
+		(s.excludeFS == nil || !s.excludeFS.Matches(deviceName))
+}
+
+func toMap(values []win_perf_counters.CounterValue) map[string]float64 {
+	mp := make(map[string]float64, len(values))
+	for _, value := range values {
+		mp[value.InstanceName] = value.Value
+	}
+	return mp
 }

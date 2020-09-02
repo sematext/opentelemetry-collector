@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//       http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -26,14 +26,12 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/text/message"
 
 	"go.opentelemetry.io/collector/testbed/testbed"
 )
 
 var (
 	performanceResultsSummary testbed.TestResultsSummary = &testbed.PerformanceResults{}
-	printer                                              = message.NewPrinter(message.MatchLanguage("en"))
 )
 
 // createConfigYaml creates a collector config file that corresponds to the
@@ -47,6 +45,7 @@ func createConfigYaml(
 	receiver testbed.DataReceiver,
 	resultDir string,
 	processors map[string]string,
+	extensions map[string]string,
 ) string {
 
 	// Create a config. Note that our DataSender is used to generate a config for Collector's
@@ -70,13 +69,31 @@ func createConfigYaml(
 		}
 	}
 
+	// Prepare extra extension config section and comma-separated list of extra extension
+	// names to use in corresponding "extensions" settings.
+	extensionsSections := ""
+	extensionsList := ""
+	if len(extensions) > 0 {
+		first := true
+		for name, cfg := range extensions {
+			extensionsSections += cfg + "\n"
+			if !first {
+				extensionsList += ","
+			}
+			extensionsList += name
+			first = false
+		}
+	}
+
 	// Set pipeline based on DataSender type
 	var pipeline string
 	switch sender.(type) {
-	case testbed.TraceDataSender, testbed.TraceDataSenderOld:
+	case testbed.TraceDataSender:
 		pipeline = "traces"
-	case testbed.MetricDataSender, testbed.MetricDataSenderOld:
+	case testbed.MetricDataSender:
 		pipeline = "metrics"
+	case testbed.LogDataSender:
+		pipeline = "logs"
 	default:
 		t.Error("Invalid DataSender type")
 	}
@@ -90,9 +107,10 @@ processors:
 extensions:
   pprof:
     save_to_file: %v/cpu.prof
+  %s
 
 service:
-  extensions: [pprof]
+  extensions: [pprof, %s]
   pipelines:
     %s:
       receivers: [%v]
@@ -107,6 +125,8 @@ service:
 		receiver.GenConfigYAMLStr(),
 		processorsSections,
 		resultDir,
+		extensionsSections,
+		extensionsList,
 		pipeline,
 		sender.ProtocolName(),
 		processorsList,
@@ -122,6 +142,7 @@ func Scenario10kItemsPerSecond(
 	resourceSpec testbed.ResourceSpec,
 	resultsSummary testbed.TestResultsSummary,
 	processors map[string]string,
+	extensions map[string]string,
 ) {
 	resultDir, err := filepath.Abs(path.Join("results", t.Name()))
 	require.NoError(t, err)
@@ -132,7 +153,8 @@ func Scenario10kItemsPerSecond(
 		Parallel:           1,
 	}
 	agentProc := &testbed.ChildProcess{}
-	configStr := createConfigYaml(t, sender, receiver, resultDir, processors)
+
+	configStr := createConfigYaml(t, sender, receiver, resultDir, processors, extensions)
 	configCleanup, err := agentProc.PrepareConfig(configStr)
 	require.NoError(t, err)
 	defer configCleanup()
@@ -151,7 +173,7 @@ func Scenario10kItemsPerSecond(
 
 	tc.SetResourceLimits(resourceSpec)
 	tc.StartBackend()
-	tc.StartAgent()
+	tc.StartAgent("--log-level=debug")
 
 	tc.StartLoad(options)
 
@@ -251,7 +273,7 @@ func ScenarioTestTraceNoBackend10kSPS(
 
 	options := testbed.LoadOptions{DataItemsPerSecond: 10000, ItemsPerBatch: 10}
 	agentProc := &testbed.ChildProcess{}
-	configStr := createConfigYaml(t, sender, receiver, resultDir, configuration.Processor)
+	configStr := createConfigYaml(t, sender, receiver, resultDir, configuration.Processor, nil)
 	configCleanup, err := agentProc.PrepareConfig(configStr)
 	require.NoError(t, err)
 	defer configCleanup()

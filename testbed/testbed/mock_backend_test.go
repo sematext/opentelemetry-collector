@@ -3,7 +3,8 @@
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
-//   http://www.apache.org/licenses/LICENSE-2.0
+//
+//       http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -86,7 +87,7 @@ func WaitFor(t *testing.T, cond func() bool, errMsg ...interface{}) bool {
 
 		// Increase waiting interval exponentially up to 500 ms.
 		if waitInterval < time.Millisecond*500 {
-			waitInterval = waitInterval * 2
+			waitInterval *= 2
 		}
 
 		if cond() {

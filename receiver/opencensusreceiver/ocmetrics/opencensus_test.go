@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//       http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -29,18 +29,56 @@ import (
 	commonpb "github.com/census-instrumentation/opencensus-proto/gen-go/agent/common/v1"
 	agentmetricspb "github.com/census-instrumentation/opencensus-proto/gen-go/agent/metrics/v1"
 	metricspb "github.com/census-instrumentation/opencensus-proto/gen-go/metrics/v1"
-	"github.com/golang/protobuf/proto"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"go.opentelemetry.io/collector/component"
+	"go.opentelemetry.io/collector/component/componenttest"
 	"go.opentelemetry.io/collector/consumer"
-	"go.opentelemetry.io/collector/consumer/consumerdata"
-	"go.opentelemetry.io/collector/internal"
+	"go.opentelemetry.io/collector/consumer/pdatautil"
+	"go.opentelemetry.io/collector/exporter/exportertest"
+	"go.opentelemetry.io/collector/exporter/opencensusexporter"
+	"go.opentelemetry.io/collector/internal/data/testdata"
 	"go.opentelemetry.io/collector/obsreport"
 	"go.opentelemetry.io/collector/testutil"
 )
 
-// TODO: add E2E tests once ocagent implements metric service client.
+func TestReceiver_endToEnd(t *testing.T) {
+	metricSink := new(exportertest.SinkMetricsExporter)
+
+	port, doneFn := ocReceiverOnGRPCServer(t, metricSink)
+	defer doneFn()
+
+	address := fmt.Sprintf("localhost:%d", port)
+	expFactory := opencensusexporter.NewFactory()
+	expCfg := expFactory.CreateDefaultConfig().(*opencensusexporter.Config)
+	expCfg.GRPCClientSettings.TLSSetting.Insecure = true
+	expCfg.Endpoint = address
+	expCfg.WaitForReady = true
+	oce, err := expFactory.CreateMetricsExporter(context.Background(), component.ExporterCreateParams{Logger: zap.NewNop()}, expCfg)
+	require.NoError(t, err)
+	err = oce.Start(context.Background(), componenttest.NewNopHost())
+	require.NoError(t, err)
+
+	defer func() {
+		require.NoError(t, oce.Shutdown(context.Background()))
+	}()
+
+	md := testdata.GenerateMetricsOneMetric()
+	assert.NoError(t, oce.ConsumeMetrics(context.Background(), pdatautil.MetricsFromInternalMetrics(md)))
+
+	testutil.WaitFor(t, func() bool {
+		return len(metricSink.AllMetrics()) != 0
+	})
+	gotMetrics := metricSink.AllMetrics()
+	require.Len(t, gotMetrics, 1)
+	gotMd := pdatautil.MetricsToInternalMetrics(gotMetrics[0])
+	assert.Equal(t, md, gotMd)
+}
 
 // Issue #43. Export should support node multiplexing.
 // The goal is to ensure that Receiver can always support
@@ -49,9 +87,9 @@ import (
 // accept nodes from downstream sources, but if a node isn't specified in
 // an exportMetrics request, assume it is from the last received and non-nil node.
 func TestExportMultiplexing(t *testing.T) {
-	metricSink := newMetricAppender()
+	metricSink := new(exportertest.SinkMetricsExporter)
 
-	_, port, doneFn := ocReceiverOnGRPCServer(t, metricSink)
+	port, doneFn := ocReceiverOnGRPCServer(t, metricSink)
 	defer doneFn()
 
 	metricsClient, metricsClientDoneFn, err := makeMetricsServiceClient(port)
@@ -114,10 +152,12 @@ func TestExportMultiplexing(t *testing.T) {
 
 	// Examination time!
 	resultsMapping := make(map[string][]*metricspb.Metric)
-
-	metricSink.forEachEntry(func(node *commonpb.Node, metrics []*metricspb.Metric) {
-		resultsMapping[nodeToKey(node)] = metrics
-	})
+	for _, md := range metricSink.AllMetrics() {
+		ocmds := pdatautil.MetricsToMetricsData(md)
+		for _, ocmd := range ocmds {
+			resultsMapping[nodeToKey(ocmd.Node)] = append(resultsMapping[nodeToKey(ocmd.Node)], ocmd.Metrics...)
+		}
+	}
 
 	// First things first, we expect exactly 3 unique keys
 	// 1. Initiating Node
@@ -159,9 +199,9 @@ func TestExportMultiplexing(t *testing.T) {
 // The first message without a Node MUST be rejected and teardown the connection.
 // See https://github.com/census-instrumentation/opencensus-service/issues/53
 func TestExportProtocolViolations_nodelessFirstMessage(t *testing.T) {
-	metricSink := newMetricAppender()
+	metricSink := new(exportertest.SinkMetricsExporter)
 
-	_, port, doneFn := ocReceiverOnGRPCServer(t, metricSink)
+	port, doneFn := ocReceiverOnGRPCServer(t, metricSink)
 	defer doneFn()
 
 	metricsClient, metricsClientDoneFn, err := makeMetricsServiceClient(port)
@@ -233,9 +273,9 @@ func TestExportProtocolConformation_metricsInFirstMessage(t *testing.T) {
 		"https://github.com/census-instrumentation/opencensus-service/issues/225",
 	)
 
-	metricSink := newMetricAppender()
+	metricSink := new(exportertest.SinkMetricsExporter)
 
-	_, port, doneFn := ocReceiverOnGRPCServer(t, metricSink)
+	port, doneFn := ocReceiverOnGRPCServer(t, metricSink)
 	defer doneFn()
 
 	metricsClient, metricsClientDoneFn, err := makeMetricsServiceClient(port)
@@ -255,9 +295,12 @@ func TestExportProtocolConformation_metricsInFirstMessage(t *testing.T) {
 
 	// Examination time!
 	resultsMapping := make(map[string][]*metricspb.Metric)
-	metricSink.forEachEntry(func(node *commonpb.Node, metrics []*metricspb.Metric) {
-		resultsMapping[nodeToKey(node)] = metrics
-	})
+	for _, md := range metricSink.AllMetrics() {
+		ocmds := pdatautil.MetricsToMetricsData(md)
+		for _, ocmd := range ocmds {
+			resultsMapping[nodeToKey(ocmd.Node)] = append(resultsMapping[nodeToKey(ocmd.Node)], ocmd.Metrics...)
+		}
+	}
 
 	if g, w := len(resultsMapping), 1; g != w {
 		t.Errorf("Results mapping: Got len(keys) %d Want %d", g, w)
@@ -310,45 +353,24 @@ func nodeToKey(n *commonpb.Node) string {
 	return string(blob)
 }
 
-// TODO: Move this to processortest.
-type metricAppender struct {
-	sync.RWMutex
-	metricsPerNode map[*commonpb.Node][]*metricspb.Metric
-}
-
-func newMetricAppender() *metricAppender {
-	return &metricAppender{metricsPerNode: make(map[*commonpb.Node][]*metricspb.Metric)}
-}
-
-var _ consumer.MetricsConsumerOld = (*metricAppender)(nil)
-
-func (sa *metricAppender) ConsumeMetricsData(ctx context.Context, md consumerdata.MetricsData) error {
-	sa.Lock()
-	defer sa.Unlock()
-
-	sa.metricsPerNode[md.Node] = append(sa.metricsPerNode[md.Node], md.Metrics...)
-
-	return nil
-}
-
-func ocReceiverOnGRPCServer(t *testing.T, sr consumer.MetricsConsumerOld) (oci *Receiver, port int, done func()) {
+func ocReceiverOnGRPCServer(t *testing.T, sr consumer.MetricsConsumer) (int, func()) {
 	ln, err := net.Listen("tcp", "localhost:")
 	require.NoError(t, err, "Failed to find an available address to run the gRPC server: %v", err)
 
 	doneFnList := []func(){func() { ln.Close() }}
-	done = func() {
+	done := func() {
 		for _, doneFn := range doneFnList {
 			doneFn()
 		}
 	}
 
-	_, port, err = testutil.HostPortFromAddr(ln.Addr())
+	_, port, err := testutil.HostPortFromAddr(ln.Addr())
 	if err != nil {
 		done()
 		t.Fatalf("Failed to parse host:port from listener address: %s error: %v", ln.Addr(), err)
 	}
 
-	oci, err = New(receiverTagValue, sr)
+	oci, err := New(receiverTagValue, sr)
 	require.NoError(t, err, "Failed to create the Receiver: %v", err)
 
 	// Now run it as a gRPC server
@@ -358,16 +380,7 @@ func ocReceiverOnGRPCServer(t *testing.T, sr consumer.MetricsConsumerOld) (oci *
 		_ = srv.Serve(ln)
 	}()
 
-	return oci, port, done
-}
-
-func (sa *metricAppender) forEachEntry(fn func(*commonpb.Node, []*metricspb.Metric)) {
-	sa.RLock()
-	defer sa.RUnlock()
-
-	for node, metrics := range sa.metricsPerNode {
-		fn(node, metrics)
-	}
+	return port, done
 }
 
 func makeMetric(val int) *metricspb.Metric {
@@ -390,14 +403,14 @@ func makeMetric(val int) *metricspb.Metric {
 
 	now := time.Now().UTC()
 	point := &metricspb.Point{
-		Timestamp: internal.TimeToTimestamp(now.Add(20 * time.Second)),
+		Timestamp: timestamppb.New(now.Add(20 * time.Second)),
 		Value: &metricspb.Point_Int64Value{
 			Int64Value: int64(val),
 		},
 	}
 
 	ts := &metricspb.TimeSeries{
-		StartTimestamp: internal.TimeToTimestamp(now.Add(-10 * time.Second)),
+		StartTimestamp: timestamppb.New(now.Add(-10 * time.Second)),
 		LabelValues:    []*metricspb.LabelValue{value},
 		Points:         []*metricspb.Point{point},
 	}

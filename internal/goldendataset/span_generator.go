@@ -1,10 +1,10 @@
-// Copyright 2020, OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//       http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -25,23 +25,23 @@ import (
 )
 
 var statusCodeMap = map[PICTInputStatus]otlptrace.Status_StatusCode{
-	SpanStatusOk:                 otlptrace.Status_Ok,
-	SpanStatusCancelled:          otlptrace.Status_Cancelled,
-	SpanStatusUnknownError:       otlptrace.Status_UnknownError,
-	SpanStatusInvalidArgument:    otlptrace.Status_InvalidArgument,
-	SpanStatusDeadlineExceeded:   otlptrace.Status_DeadlineExceeded,
-	SpanStatusNotFound:           otlptrace.Status_NotFound,
-	SpanStatusAlreadyExists:      otlptrace.Status_AlreadyExists,
-	SpanStatusPermissionDenied:   otlptrace.Status_PermissionDenied,
-	SpanStatusResourceExhausted:  otlptrace.Status_ResourceExhausted,
-	SpanStatusFailedPrecondition: otlptrace.Status_FailedPrecondition,
-	SpanStatusAborted:            otlptrace.Status_Aborted,
-	SpanStatusOutOfRange:         otlptrace.Status_OutOfRange,
-	SpanStatusUnimplemented:      otlptrace.Status_Unimplemented,
-	SpanStatusInternalError:      otlptrace.Status_InternalError,
-	SpanStatusUnavailable:        otlptrace.Status_Unavailable,
-	SpanStatusDataLoss:           otlptrace.Status_DataLoss,
-	SpanStatusUnauthenticated:    otlptrace.Status_Unauthenticated,
+	SpanStatusOk:                 otlptrace.Status_STATUS_CODE_OK,
+	SpanStatusCancelled:          otlptrace.Status_STATUS_CODE_CANCELLED,
+	SpanStatusUnknownError:       otlptrace.Status_STATUS_CODE_UNKNOWN_ERROR,
+	SpanStatusInvalidArgument:    otlptrace.Status_STATUS_CODE_INVALID_ARGUMENT,
+	SpanStatusDeadlineExceeded:   otlptrace.Status_STATUS_CODE_DEADLINE_EXCEEDED,
+	SpanStatusNotFound:           otlptrace.Status_STATUS_CODE_NOT_FOUND,
+	SpanStatusAlreadyExists:      otlptrace.Status_STATUS_CODE_ALREADY_EXISTS,
+	SpanStatusPermissionDenied:   otlptrace.Status_STATUS_CODE_PERMISSION_DENIED,
+	SpanStatusResourceExhausted:  otlptrace.Status_STATUS_CODE_RESOURCE_EXHAUSTED,
+	SpanStatusFailedPrecondition: otlptrace.Status_STATUS_CODE_FAILED_PRECONDITION,
+	SpanStatusAborted:            otlptrace.Status_STATUS_CODE_ABORTED,
+	SpanStatusOutOfRange:         otlptrace.Status_STATUS_CODE_OUT_OF_RANGE,
+	SpanStatusUnimplemented:      otlptrace.Status_STATUS_CODE_UNIMPLEMENTED,
+	SpanStatusInternalError:      otlptrace.Status_STATUS_CODE_INTERNAL_ERROR,
+	SpanStatusUnavailable:        otlptrace.Status_STATUS_CODE_UNAVAILABLE,
+	SpanStatusDataLoss:           otlptrace.Status_STATUS_CODE_DATA_LOSS,
+	SpanStatusUnauthenticated:    otlptrace.Status_STATUS_CODE_UNAUTHENTICATED,
 }
 
 var statusMsgMap = map[PICTInputStatus]string{
@@ -172,15 +172,15 @@ func generateTraceState(tracestate PICTInputTracestate) string {
 func lookupSpanKind(kind PICTInputKind) otlptrace.Span_SpanKind {
 	switch kind {
 	case SpanKindClient:
-		return otlptrace.Span_CLIENT
+		return otlptrace.Span_SPAN_KIND_CLIENT
 	case SpanKindServer:
-		return otlptrace.Span_SERVER
+		return otlptrace.Span_SPAN_KIND_SERVER
 	case SpanKindProducer:
-		return otlptrace.Span_PRODUCER
+		return otlptrace.Span_SPAN_KIND_PRODUCER
 	case SpanKindConsumer:
-		return otlptrace.Span_CONSUMER
+		return otlptrace.Span_SPAN_KIND_CONSUMER
 	case SpanKindInternal:
-		return otlptrace.Span_INTERNAL
+		return otlptrace.Span_SPAN_KIND_INTERNAL
 	case SpanKindUnspecified:
 		fallthrough
 	default:
@@ -244,26 +244,32 @@ func generateStatus(statusStr PICTInputStatus) *otlptrace.Status {
 
 func generateDatabaseSQLAttributes() map[string]interface{} {
 	attrMap := make(map[string]interface{})
-	attrMap[conventions.AttributeDBType] = "sql"
-	attrMap[conventions.AttributeDBInstance] = "inventory"
-	attrMap[conventions.AttributeDBStatement] =
-		"SELECT c.product_catg_id, c.catg_name, c.description, c.html_frag, c.image_url, p.name FROM product_catg c OUTER JOIN product p ON c.product_catg_id=p.product_catg_id WHERE c.product_catg_id = :catgId"
-	attrMap[conventions.AttributeDBUser] = "invsvc"
-	attrMap[conventions.AttributeDBURL] = "jdbc:postgresql://invdev.cdsr3wfqepqo.us-east-1.rds.amazonaws.com:5432/inventory"
-	attrMap[conventions.AttributeNetPeerIP] = "172.30.2.7"
-	attrMap[conventions.AttributeNetPeerPort] = int64(5432)
+	attrMap[conventions.AttributeDBSystem] = "mysql"
+	attrMap[conventions.AttributeDBConnectionString] = "Server=shopdb.example.com;Database=ShopDb;Uid=billing_user;TableCache=true;UseCompression=True;MinimumPoolSize=10;MaximumPoolSize=50;"
+	attrMap[conventions.AttributeDBUser] = "billing_user"
+	attrMap[conventions.AttributeNetHostIP] = "192.0.3.122"
+	attrMap[conventions.AttributeNetHostPort] = int64(51306)
+	attrMap[conventions.AttributeNetPeerName] = "shopdb.example.com"
+	attrMap[conventions.AttributeNetPeerIP] = "192.0.2.12"
+	attrMap[conventions.AttributeNetPeerPort] = int64(3306)
+	attrMap[conventions.AttributeNetTransport] = "IP.TCP"
+	attrMap[conventions.AttributeDBName] = "shopdb"
+	attrMap[conventions.AttributeDBStatement] = "SELECT * FROM orders WHERE order_id = 'o4711'"
 	attrMap[conventions.AttributeEnduserID] = "unittest"
 	return attrMap
 }
 
 func generateDatabaseNoSQLAttributes() map[string]interface{} {
 	attrMap := make(map[string]interface{})
-	attrMap[conventions.AttributeDBType] = "cosmosdb"
-	attrMap[conventions.AttributeDBInstance] = "graphdb"
-	attrMap[conventions.AttributeDBStatement] = "g.V().hasLabel('postive').has('age', gt(65)).values('geocode')"
-	attrMap[conventions.AttributeDBURL] = "wss://contacttrace.gremlin.cosmos.azure.com:443/"
-	attrMap[conventions.AttributeNetPeerIP] = "10.118.17.63"
-	attrMap[conventions.AttributeNetPeerPort] = int64(443)
+	attrMap[conventions.AttributeDBSystem] = "mongodb"
+	attrMap[conventions.AttributeDBUser] = "the_user"
+	attrMap[conventions.AttributeNetPeerName] = "mongodb0.example.com"
+	attrMap[conventions.AttributeNetPeerIP] = "192.0.2.14"
+	attrMap[conventions.AttributeNetPeerPort] = int64(27017)
+	attrMap[conventions.AttributeNetTransport] = "IP.TCP"
+	attrMap[conventions.AttributeDBName] = "shopDb"
+	attrMap[conventions.AttributeDBOperation] = "findAndModify"
+	attrMap[conventions.AttributeDBMongoDBCollection] = "products"
 	attrMap[conventions.AttributeEnduserID] = "unittest"
 	return attrMap
 }
@@ -422,22 +428,22 @@ func generateMaxCountAttributes(includeStatus bool) map[string]interface{} {
 		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/81.0.4044.138 Safari/537.36"
 	attrMap[conventions.AttributeHTTPRoute] = "/blog/posts"
 	attrMap[conventions.AttributeHTTPClientIP] = "2600:1700:1f00:11c0:1ced:afa5:fd77:9d01"
+	attrMap[conventions.AttributePeerService] = "IdentifyImageService"
 	attrMap[conventions.AttributeNetPeerIP] = "2600:1700:1f00:11c0:1ced:afa5:fd77:9ddc"
 	attrMap[conventions.AttributeNetPeerPort] = int64(39111)
-	attrMap["ai-sampler.weight"] = float64(0.07)
+	attrMap["ai-sampler.weight"] = 0.07
 	attrMap["ai-sampler.absolute"] = false
 	attrMap["ai-sampler.maxhops"] = int64(6)
 	attrMap["application.create.location"] = "https://api.opentelemetry.io/blog/posts/806673B9-4F4D-4284-9635-3A3E3E3805BE"
 	attrMap["application.svcmap"] = "Blogosphere"
 	attrMap["application.abflags"] = "UIx=false,UI4=true,flow-alt3=false"
 	attrMap["application.thread"] = "proc-pool-14"
-	attrMap["application.session"] = "233CC260-63A8-4ACA-A1C1-8F97AB4A2C01"
+	attrMap["application.session"] = ""
 	attrMap["application.persist.size"] = int64(1172184)
 	attrMap["application.queue.size"] = int64(0)
-	attrMap["application.validation.results"] = "Success"
 	attrMap["application.job.id"] = "0E38800B-9C4C-484E-8F2B-C7864D854321"
-	attrMap["application.service.sla"] = float64(0.34)
-	attrMap["application.service.slo"] = float64(0.55)
+	attrMap["application.service.sla"] = 0.34
+	attrMap["application.service.slo"] = 0.55
 	attrMap[conventions.AttributeEnduserID] = "unittest"
 	attrMap[conventions.AttributeEnduserRole] = "poweruser"
 	attrMap[conventions.AttributeEnduserScope] = "email profile administrator"
@@ -463,7 +469,7 @@ func generateSpanLinks(linkCnt PICTInputSpanChild, random io.Reader) []*otlptrac
 	listSize := calculateListSize(linkCnt)
 	linkList := make([]*otlptrace.Span_Link, listSize)
 	for i := 0; i < listSize; i++ {
-		linkList[i] = generateSpanLink(i, random)
+		linkList[i] = generateSpanLink(random, i)
 	}
 	return linkList
 }
@@ -494,6 +500,9 @@ func generateSpanEvent(index int) *otlptrace.Span_Event {
 }
 
 func generateEventAttributes(index int) []*otlpcommon.KeyValue {
+	if index%4 == 2 {
+		return nil
+	}
 	attrMap := make(map[string]interface{})
 	if index%2 == 0 {
 		attrMap[conventions.AttributeMessageType] = "SENT"
@@ -503,10 +512,15 @@ func generateEventAttributes(index int) []*otlpcommon.KeyValue {
 	attrMap[conventions.AttributeMessageID] = int64(index)
 	attrMap[conventions.AttributeMessageCompressedSize] = int64(17 * index)
 	attrMap[conventions.AttributeMessageUncompressedSize] = int64(24 * index)
+	if index%4 == 1 {
+		attrMap["app.inretry"] = true
+		attrMap["app.progress"] = 0.6
+		attrMap["app.statemap"] = "14|5|202"
+	}
 	return convertMapToAttributeKeyValues(attrMap)
 }
 
-func generateSpanLink(index int, random io.Reader) *otlptrace.Span_Link {
+func generateSpanLink(random io.Reader, index int) *otlptrace.Span_Link {
 	return &otlptrace.Span_Link{
 		TraceId:                generateTraceID(random),
 		SpanId:                 generateSpanID(random),
@@ -517,6 +531,14 @@ func generateSpanLink(index int, random io.Reader) *otlptrace.Span_Link {
 }
 
 func generateLinkAttributes(index int) []*otlpcommon.KeyValue {
+	if index%4 == 2 {
+		return nil
+	}
 	attrMap := generateMessagingConsumerAttributes()
+	if index%4 == 1 {
+		attrMap["app.inretry"] = true
+		attrMap["app.progress"] = 0.6
+		attrMap["app.statemap"] = "14|5|202"
+	}
 	return convertMapToAttributeKeyValues(attrMap)
 }

@@ -1,10 +1,10 @@
-// Copyright 2020, OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//       http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -23,6 +23,7 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
+	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/config"
 	"go.opentelemetry.io/collector/config/configmodels"
 	"go.opentelemetry.io/collector/internal/version"
@@ -56,7 +57,7 @@ type OtelcolRunner interface {
 // same process as the test executor.
 type InProcessCollector struct {
 	logger       *zap.Logger
-	factories    config.Factories
+	factories    component.Factories
 	receiverPort int
 	config       *configmodels.Config
 	svc          *service.Application
@@ -65,7 +66,7 @@ type InProcessCollector struct {
 }
 
 // NewInProcessCollector crewtes a new InProcessCollector using the supplied component factories.
-func NewInProcessCollector(factories config.Factories, receiverPort int) *InProcessCollector {
+func NewInProcessCollector(factories component.Factories, receiverPort int) *InProcessCollector {
 	return &InProcessCollector{
 		factories:    factories,
 		receiverPort: receiverPort,
@@ -99,13 +100,13 @@ func (ipp *InProcessCollector) PrepareConfig(configStr string) (configCleanup fu
 
 func (ipp *InProcessCollector) Start(args StartParams) (receiverAddr string, err error) {
 	params := service.Parameters{
-		ApplicationStartInfo: service.ApplicationStartInfo{
+		ApplicationStartInfo: component.ApplicationStartInfo{
 			ExeName:  "otelcol",
 			LongName: "InProcess Collector",
 			Version:  version.Version,
 			GitHash:  version.GitHash,
 		},
-		ConfigFactory: func(v *viper.Viper, factories config.Factories) (*configmodels.Config, error) {
+		ConfigFactory: func(v *viper.Viper, factories component.Factories) (*configmodels.Config, error) {
 			return ipp.config, nil
 		},
 		Factories: ipp.factories,
@@ -114,7 +115,7 @@ func (ipp *InProcessCollector) Start(args StartParams) (receiverAddr string, err
 	if err != nil {
 		return receiverAddr, err
 	}
-	ipp.svc.Command().SetArgs(args.cmdArgs)
+	ipp.svc.Command().SetArgs(args.CmdArgs)
 
 	ipp.appDone = make(chan struct{})
 	go func() {

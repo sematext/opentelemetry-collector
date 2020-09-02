@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//       http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -25,13 +25,14 @@ import (
 
 	commonpb "github.com/census-instrumentation/opencensus-proto/gen-go/agent/common/v1"
 	tracepb "github.com/census-instrumentation/opencensus-proto/gen-go/trace/v1"
-	"github.com/golang/protobuf/ptypes/timestamp"
+	"github.com/google/go-cmp/cmp"
 	zipkinmodel "github.com/openzipkin/zipkin-go/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/testing/protocmp"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"go.opentelemetry.io/collector/consumer/consumerdata"
-	"go.opentelemetry.io/collector/internal"
 	tracetranslator "go.opentelemetry.io/collector/translator/trace"
 )
 
@@ -143,7 +144,7 @@ func TestZipkinJSONFallbackToLocalComponent(t *testing.T) {
 	blob, err := ioutil.ReadFile("./testdata/zipkin_v1_local_component.json")
 	require.NoError(t, err, "Failed to load test data")
 
-	reqs, err := V1JSONBatchToOCProto(blob)
+	reqs, err := v1JSONBatchToOCProto(blob)
 	require.NoError(t, err, "Failed to translate zipkinv1 to OC proto")
 	require.Equal(t, 2, len(reqs), "Invalid trace service requests count")
 
@@ -165,7 +166,7 @@ func TestSingleJSONV1BatchToOCProto(t *testing.T) {
 	blob, err := ioutil.ReadFile("./testdata/zipkin_v1_single_batch.json")
 	require.NoError(t, err, "Failed to load test data")
 
-	got, err := V1JSONBatchToOCProto(blob)
+	got, err := v1JSONBatchToOCProto(blob)
 	require.NoError(t, err, "Failed to translate zipkinv1 to OC proto")
 
 	want := ocBatchesFromZipkinV1
@@ -189,7 +190,7 @@ func TestMultipleJSONV1BatchesToOCProto(t *testing.T) {
 		jsonBatch, err := json.Marshal(batch)
 		require.NoError(t, err, "Failed to marshal interface back to blob")
 
-		g, err := V1JSONBatchToOCProto(jsonBatch)
+		g, err := v1JSONBatchToOCProto(jsonBatch)
 		require.NoError(t, err, "Failed to translate zipkinv1 to OC proto")
 
 		// Coalesce the nodes otherwise they will differ due to multiple
@@ -212,7 +213,9 @@ func TestMultipleJSONV1BatchesToOCProto(t *testing.T) {
 	sortTraceByNodeName(want)
 	sortTraceByNodeName(got)
 
-	assert.EqualValues(t, got, want)
+	if diff := cmp.Diff(want, got, protocmp.Transform()); diff != "" {
+		t.Errorf("Unexpected difference:\n%v", diff)
+	}
 }
 
 func sortTraceByNodeName(trace []consumerdata.TraceData) {
@@ -498,7 +501,7 @@ func TestZipkinAnnotationsToOCStatus(t *testing.T) {
 				t.Errorf("#%d: Unexpected error: %v", i, err)
 				return
 			}
-			gb, err := V1JSONBatchToOCProto(zBytes)
+			gb, err := v1JSONBatchToOCProto(zBytes)
 			if err != nil {
 				t.Errorf("#%d: Unexpected error: %v", i, err)
 				return
@@ -528,7 +531,7 @@ func TestSpanWithoutTimestampGetsTag(t *testing.T) {
 
 	testStart := time.Now()
 
-	gb, err := V1JSONBatchToOCProto(zBytes)
+	gb, err := v1JSONBatchToOCProto(zBytes)
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 		return
@@ -538,7 +541,7 @@ func TestSpanWithoutTimestampGetsTag(t *testing.T) {
 	assert.NotNil(t, gs.StartTime)
 	assert.NotNil(t, gs.EndTime)
 
-	assert.True(t, internal.TimestampToTime(gs.StartTime).Sub(testStart) >= 0)
+	assert.True(t, gs.StartTime.AsTime().Sub(testStart) >= 0)
 
 	wantAttributes := &tracepb.Span_Attributes{
 		AttributeMap: map[string]*tracepb.AttributeValue{
@@ -572,7 +575,7 @@ func TestJSONHTTPToGRPCStatusCode(t *testing.T) {
 			t.Errorf("#%d: Unexpected error: %v", i, err)
 			continue
 		}
-		gb, err := V1JSONBatchToOCProto(zBytes)
+		gb, err := v1JSONBatchToOCProto(zBytes)
 		if err != nil {
 			t.Errorf("#%d: Unexpected error: %v", i, err)
 			continue
@@ -598,8 +601,8 @@ var ocBatchesFromZipkinV1 = []consumerdata.TraceData{
 				ParentSpanId: nil,
 				Name:         &tracepb.TruncatableString{Value: "checkAvailability"},
 				Kind:         tracepb.Span_CLIENT,
-				StartTime:    &timestamp.Timestamp{Seconds: 1544805927, Nanos: 446743000},
-				EndTime:      &timestamp.Timestamp{Seconds: 1544805927, Nanos: 459699000},
+				StartTime:    &timestamppb.Timestamp{Seconds: 1544805927, Nanos: 446743000},
+				EndTime:      &timestamppb.Timestamp{Seconds: 1544805927, Nanos: 459699000},
 				TimeEvents:   nil,
 			},
 		},
@@ -616,12 +619,12 @@ var ocBatchesFromZipkinV1 = []consumerdata.TraceData{
 				ParentSpanId: nil,
 				Name:         &tracepb.TruncatableString{Value: "checkAvailability"},
 				Kind:         tracepb.Span_SERVER,
-				StartTime:    &timestamp.Timestamp{Seconds: 1544805927, Nanos: 448081000},
-				EndTime:      &timestamp.Timestamp{Seconds: 1544805927, Nanos: 460102000},
+				StartTime:    &timestamppb.Timestamp{Seconds: 1544805927, Nanos: 448081000},
+				EndTime:      &timestamppb.Timestamp{Seconds: 1544805927, Nanos: 460102000},
 				TimeEvents: &tracepb.Span_TimeEvents{
 					TimeEvent: []*tracepb.Span_TimeEvent{
 						{
-							Time: &timestamp.Timestamp{Seconds: 1544805927, Nanos: 450000000},
+							Time: &timestamppb.Timestamp{Seconds: 1544805927, Nanos: 450000000},
 							Value: &tracepb.Span_TimeEvent_Annotation_{
 								Annotation: &tracepb.Span_TimeEvent_Annotation{
 									Description: &tracepb.TruncatableString{Value: "custom time event"},
@@ -637,8 +640,8 @@ var ocBatchesFromZipkinV1 = []consumerdata.TraceData{
 				ParentSpanId: []byte{0x0e, 0xd2, 0xe6, 0x3c, 0xbe, 0x71, 0xf5, 0xa8},
 				Name:         &tracepb.TruncatableString{Value: "checkStock"},
 				Kind:         tracepb.Span_CLIENT,
-				StartTime:    &timestamp.Timestamp{Seconds: 1544805927, Nanos: 453923000},
-				EndTime:      &timestamp.Timestamp{Seconds: 1544805927, Nanos: 457663000},
+				StartTime:    &timestamppb.Timestamp{Seconds: 1544805927, Nanos: 453923000},
+				EndTime:      &timestamppb.Timestamp{Seconds: 1544805927, Nanos: 457663000},
 				TimeEvents:   nil,
 			},
 		},
@@ -655,8 +658,8 @@ var ocBatchesFromZipkinV1 = []consumerdata.TraceData{
 				ParentSpanId: []byte{0x0e, 0xd2, 0xe6, 0x3c, 0xbe, 0x71, 0xf5, 0xa8},
 				Name:         &tracepb.TruncatableString{Value: "checkStock"},
 				Kind:         tracepb.Span_SERVER,
-				StartTime:    &timestamp.Timestamp{Seconds: 1544805927, Nanos: 454487000},
-				EndTime:      &timestamp.Timestamp{Seconds: 1544805927, Nanos: 457320000},
+				StartTime:    &timestamppb.Timestamp{Seconds: 1544805927, Nanos: 454487000},
+				EndTime:      &timestamppb.Timestamp{Seconds: 1544805927, Nanos: 457320000},
 				Status: &tracepb.Status{
 					Code: 0,
 				},
@@ -688,8 +691,8 @@ var ocBatchesFromZipkinV1 = []consumerdata.TraceData{
 				ParentSpanId: []byte{0x0e, 0xd2, 0xe6, 0x3c, 0xbe, 0x71, 0xf5, 0xa8},
 				Name:         &tracepb.TruncatableString{Value: "checkStock"},
 				Kind:         tracepb.Span_SPAN_KIND_UNSPECIFIED,
-				StartTime:    &timestamp.Timestamp{Seconds: 1544805927, Nanos: 453923000},
-				EndTime:      &timestamp.Timestamp{Seconds: 1544805927, Nanos: 457663000},
+				StartTime:    &timestamppb.Timestamp{Seconds: 1544805927, Nanos: 453923000},
+				EndTime:      &timestamppb.Timestamp{Seconds: 1544805927, Nanos: 457663000},
 				Attributes:   nil,
 			},
 		},
@@ -762,11 +765,6 @@ func TestSpanKindTranslation(t *testing.T) {
 				}
 				assert.EqualValues(t, expected, ocSpan.Attributes.AttributeMap[tracetranslator.TagSpanKind])
 			}
-
-			// Translate to Zipkin V2 (which is used for internal representation by Zipkin exporter).
-			zSpanTranslated, err := OCSpanProtoToZipkin(nil, nil, ocSpan, "")
-			assert.NoError(t, err)
-			assert.EqualValues(t, test.zipkinV2Kind, zSpanTranslated.Kind)
 		})
 	}
 }

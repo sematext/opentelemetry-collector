@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//       http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -22,8 +22,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"go.opentelemetry.io/collector/config"
+	"go.opentelemetry.io/collector/component/componenttest"
 	"go.opentelemetry.io/collector/config/configmodels"
+	"go.opentelemetry.io/collector/config/configtest"
 	"go.opentelemetry.io/collector/internal/processor/filterset"
 	"go.opentelemetry.io/collector/receiver/hostmetricsreceiver/internal"
 	"go.opentelemetry.io/collector/receiver/hostmetricsreceiver/internal/scraper/cpuscraper"
@@ -38,12 +39,12 @@ import (
 )
 
 func TestLoadConfig(t *testing.T) {
-	factories, err := config.ExampleComponents()
+	factories, err := componenttest.ExampleComponents()
 	require.NoError(t, err)
 
 	factory := NewFactory()
 	factories.Receivers[typeStr] = factory
-	cfg, err := config.LoadConfigFile(t, path.Join(".", "testdata", "config.yaml"), factories)
+	cfg, err := configtest.LoadConfigFile(t, path.Join(".", "testdata", "config.yaml"), factories)
 
 	require.NoError(t, err)
 	require.NotNil(t, cfg)
@@ -71,12 +72,17 @@ func TestLoadConfig(t *testing.T) {
 			loadscraper.TypeStr:       &loadscraper.Config{},
 			filesystemscraper.TypeStr: &filesystemscraper.Config{},
 			memoryscraper.TypeStr:     &memoryscraper.Config{},
-			networkscraper.TypeStr:    &networkscraper.Config{},
-			processesscraper.TypeStr:  &processesscraper.Config{},
-			swapscraper.TypeStr:       &swapscraper.Config{},
+			networkscraper.TypeStr: &networkscraper.Config{
+				Include: networkscraper.MatchConfig{
+					Interfaces: []string{"test1"},
+					Config:     filterset.Config{MatchType: "strict"},
+				},
+			},
+			processesscraper.TypeStr: &processesscraper.Config{},
+			swapscraper.TypeStr:      &swapscraper.Config{},
 			processscraper.TypeStr: &processscraper.Config{
 				Include: processscraper.MatchConfig{
-					Names:  []string{"test1", "test2"},
+					Names:  []string{"test2", "test3"},
 					Config: filterset.Config{MatchType: "regexp"},
 				},
 			},
@@ -87,23 +93,23 @@ func TestLoadConfig(t *testing.T) {
 }
 
 func TestLoadInvalidConfig_NoScrapers(t *testing.T) {
-	factories, err := config.ExampleComponents()
+	factories, err := componenttest.ExampleComponents()
 	require.NoError(t, err)
 
 	factory := NewFactory()
 	factories.Receivers[typeStr] = factory
-	_, err = config.LoadConfigFile(t, path.Join(".", "testdata", "config-noscrapers.yaml"), factories)
+	_, err = configtest.LoadConfigFile(t, path.Join(".", "testdata", "config-noscrapers.yaml"), factories)
 
-	require.EqualError(t, err, "error reading settings for receiver type \"hostmetrics\": must specify at least one scraper when using hostmetrics receiver")
+	require.EqualError(t, err, "error reading receivers configuration for hostmetrics: must specify at least one scraper when using hostmetrics receiver")
 }
 
 func TestLoadInvalidConfig_InvalidScraperKey(t *testing.T) {
-	factories, err := config.ExampleComponents()
+	factories, err := componenttest.ExampleComponents()
 	require.NoError(t, err)
 
 	factory := NewFactory()
 	factories.Receivers[typeStr] = factory
-	_, err = config.LoadConfigFile(t, path.Join(".", "testdata", "config-invalidscraperkey.yaml"), factories)
+	_, err = configtest.LoadConfigFile(t, path.Join(".", "testdata", "config-invalidscraperkey.yaml"), factories)
 
-	require.EqualError(t, err, "error reading settings for receiver type \"hostmetrics\": invalid scraper key: invalidscraperkey")
+	require.EqualError(t, err, "error reading receivers configuration for hostmetrics: invalid scraper key: invalidscraperkey")
 }

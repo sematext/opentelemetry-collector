@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//       http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -47,6 +47,8 @@ var standardMetrics = []string{
 	"system.memory.usage",
 	"system.disk.io",
 	"system.disk.ops",
+	"system.disk.pending_operations",
+	"system.disk.time",
 	"system.filesystem.usage",
 	"system.cpu.load_average.1m",
 	"system.cpu.load_average.5m",
@@ -62,16 +64,17 @@ var standardMetrics = []string{
 
 var resourceMetrics = []string{
 	"process.cpu.time",
-	"process.memory.usage",
+	"process.memory.physical_usage",
+	"process.memory.virtual_usage",
 	"process.disk.io",
 }
 
 var systemSpecificMetrics = map[string][]string{
-	"linux":   {"system.disk.merged", "system.disk.time", "system.filesystem.inodes.usage", "system.processes.running", "system.processes.blocked", "system.swap.page_faults"},
-	"darwin":  {"system.disk.time", "system.filesystem.inodes.usage", "system.processes.running", "system.processes.blocked", "system.swap.page_faults"},
-	"freebsd": {"system.disk.time", "system.filesystem.inodes.usage", "system.processes.running", "system.processes.blocked", "system.swap.page_faults"},
-	"openbsd": {"system.disk.time", "system.filesystem.inodes.usage", "system.processes.running", "system.processes.blocked", "system.swap.page_faults"},
-	"solaris": {"system.disk.time", "system.filesystem.inodes.usage", "system.swap.page_faults"},
+	"linux":   {"system.disk.merged", "system.filesystem.inodes.usage", "system.processes.running", "system.processes.blocked", "system.swap.page_faults"},
+	"darwin":  {"system.filesystem.inodes.usage", "system.processes.running", "system.processes.blocked", "system.swap.page_faults"},
+	"freebsd": {"system.filesystem.inodes.usage", "system.processes.running", "system.processes.blocked", "system.swap.page_faults"},
+	"openbsd": {"system.filesystem.inodes.usage", "system.processes.running", "system.processes.blocked", "system.swap.page_faults"},
+	"solaris": {"system.filesystem.inodes.usage", "system.swap.page_faults"},
 }
 
 var factories = map[string]internal.ScraperFactory{
@@ -123,7 +126,7 @@ func TestGatherMetrics_EndToEnd(t *testing.T) {
 	cancelFn()
 
 	const tick = 50 * time.Millisecond
-	const waitFor = time.Second
+	const waitFor = 5 * time.Second
 	require.Eventuallyf(t, func() bool {
 		got := sink.AllMetrics()
 		if len(got) == 0 {
@@ -188,7 +191,7 @@ func getMetricSlice(t *testing.T, rm pdata.ResourceMetrics) pdata.MetricSlice {
 func getReturnedMetricNames(metrics pdata.MetricSlice) map[string]struct{} {
 	metricNames := make(map[string]struct{})
 	for i := 0; i < metrics.Len(); i++ {
-		metricNames[metrics.At(i).MetricDescriptor().Name()] = struct{}{}
+		metricNames[metrics.At(i).Name()] = struct{}{}
 	}
 	return metricNames
 }
@@ -208,14 +211,14 @@ type mockFactory struct{ mock.Mock }
 type mockScraper struct{ mock.Mock }
 
 func (m *mockFactory) CreateDefaultConfig() internal.Config { return &mockConfig{} }
-func (m *mockFactory) CreateMetricsScraper(ctx context.Context, logger *zap.Logger, cfg internal.Config) (internal.Scraper, error) {
+func (m *mockFactory) CreateMetricsScraper(context.Context, *zap.Logger, internal.Config) (internal.Scraper, error) {
 	args := m.MethodCalled("CreateMetricsScraper")
 	return args.Get(0).(internal.Scraper), args.Error(1)
 }
 
-func (m *mockScraper) Initialize(ctx context.Context) error { return nil }
-func (m *mockScraper) Close(ctx context.Context) error      { return nil }
-func (m *mockScraper) ScrapeMetrics(ctx context.Context) (pdata.MetricSlice, error) {
+func (m *mockScraper) Initialize(context.Context) error { return nil }
+func (m *mockScraper) Close(context.Context) error      { return nil }
+func (m *mockScraper) ScrapeMetrics(context.Context) (pdata.MetricSlice, error) {
 	return pdata.NewMetricSlice(), errors.New("err1")
 }
 
@@ -223,14 +226,14 @@ type mockResourceFactory struct{ mock.Mock }
 type mockResourceScraper struct{ mock.Mock }
 
 func (m *mockResourceFactory) CreateDefaultConfig() internal.Config { return &mockConfig{} }
-func (m *mockResourceFactory) CreateMetricsScraper(ctx context.Context, logger *zap.Logger, cfg internal.Config) (internal.ResourceScraper, error) {
+func (m *mockResourceFactory) CreateMetricsScraper(context.Context, *zap.Logger, internal.Config) (internal.ResourceScraper, error) {
 	args := m.MethodCalled("CreateMetricsScraper")
 	return args.Get(0).(internal.ResourceScraper), args.Error(1)
 }
 
-func (m *mockResourceScraper) Initialize(ctx context.Context) error { return nil }
-func (m *mockResourceScraper) Close(ctx context.Context) error      { return nil }
-func (m *mockResourceScraper) ScrapeMetrics(ctx context.Context) (pdata.ResourceMetricsSlice, error) {
+func (m *mockResourceScraper) Initialize(context.Context) error { return nil }
+func (m *mockResourceScraper) Close(context.Context) error      { return nil }
+func (m *mockResourceScraper) ScrapeMetrics(context.Context) (pdata.ResourceMetricsSlice, error) {
 	return pdata.NewResourceMetricsSlice(), errors.New("err2")
 }
 

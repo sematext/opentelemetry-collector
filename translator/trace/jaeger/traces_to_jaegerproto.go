@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//       http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -20,8 +20,6 @@ import (
 	"github.com/jaegertracing/jaeger/model"
 
 	"go.opentelemetry.io/collector/consumer/pdata"
-	"go.opentelemetry.io/collector/internal"
-	otlptrace "go.opentelemetry.io/collector/internal/data/opentelemetry-proto-gen/trace/v1"
 	"go.opentelemetry.io/collector/translator/conventions"
 	tracetranslator "go.opentelemetry.io/collector/translator/trace"
 )
@@ -197,7 +195,7 @@ func spanToJaegerProto(span pdata.Span) (*model.Span, error) {
 		return nil, fmt.Errorf("error converting span links to Jaeger references: %w", err)
 	}
 
-	startTime := internal.UnixNanoToTime(span.StartTime())
+	startTime := pdata.UnixNanoToTime(span.StartTime())
 
 	return &model.Span{
 		TraceID:       traceID,
@@ -205,7 +203,7 @@ func spanToJaegerProto(span pdata.Span) (*model.Span, error) {
 		OperationName: span.Name(),
 		References:    jReferences,
 		StartTime:     startTime,
-		Duration:      internal.UnixNanoToTime(span.EndTime()).Sub(startTime),
+		Duration:      pdata.UnixNanoToTime(span.EndTime()).Sub(startTime),
 		Tags:          getJaegerProtoSpanTags(span),
 		Logs:          spanEventsToJaegerProtoLogs(span.Events()),
 	}, nil
@@ -269,7 +267,7 @@ func getJaegerProtoSpanTags(span pdata.Span) []model.KeyValue {
 }
 
 func traceIDToJaegerProto(traceID pdata.TraceID) (model.TraceID, error) {
-	traceIDHigh, traceIDLow, err := tracetranslator.BytesToUInt64TraceID([]byte(traceID))
+	traceIDHigh, traceIDLow, err := tracetranslator.BytesToUInt64TraceID(traceID)
 	if err != nil {
 		return model.TraceID{}, err
 	}
@@ -283,7 +281,7 @@ func traceIDToJaegerProto(traceID pdata.TraceID) (model.TraceID, error) {
 }
 
 func spanIDToJaegerProto(spanID pdata.SpanID) (model.SpanID, error) {
-	uSpanID, err := tracetranslator.BytesToUInt64SpanID([]byte(spanID))
+	uSpanID, err := tracetranslator.BytesToUInt64SpanID(spanID)
 	if err != nil {
 		return model.SpanID(0), err
 	}
@@ -378,7 +376,7 @@ func spanEventsToJaegerProtoLogs(events pdata.SpanEventSlice) []model.Log {
 		}
 		fields = appendTagsFromAttributes(fields, event.Attributes())
 		logs = append(logs, model.Log{
-			Timestamp: internal.UnixNanoToTime(event.Timestamp()),
+			Timestamp: pdata.UnixNanoToTime(event.Timestamp()),
 			Fields:    fields,
 		})
 	}
@@ -419,7 +417,7 @@ func getTagFromStatusCode(statusCode pdata.StatusCode) (model.KeyValue, bool) {
 }
 
 func getErrorTagFromStatusCode(statusCode pdata.StatusCode) (model.KeyValue, bool) {
-	if statusCode == pdata.StatusCode(otlptrace.Status_Ok) {
+	if statusCode == pdata.StatusCodeOk {
 		return model.KeyValue{}, false
 	}
 	return model.KeyValue{

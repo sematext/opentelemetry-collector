@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//       http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -18,9 +18,10 @@ import (
 	"testing"
 
 	gogoproto "github.com/gogo/protobuf/proto"
-	goproto "github.com/golang/protobuf/proto"
-	otlptrace_goproto "github.com/open-telemetry/opentelemetry-proto/gen/go/trace/v1"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	goproto "google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/emptypb"
 
 	otlptrace "go.opentelemetry.io/collector/internal/data/opentelemetry-proto-gen/trace/v1"
 )
@@ -46,6 +47,31 @@ func TestSpanCount(t *testing.T) {
 	rms.At(2).InstrumentationLibrarySpans().Resize(1)
 	rms.At(2).InstrumentationLibrarySpans().At(0).Spans().Resize(5)
 	assert.EqualValues(t, 6, md.SpanCount())
+}
+
+func TestSize(t *testing.T) {
+	md := NewTraces()
+	assert.Equal(t, 0, md.Size())
+	rms := md.ResourceSpans()
+	rms.Resize(1)
+	rms.At(0).InstrumentationLibrarySpans().Resize(1)
+	rms.At(0).InstrumentationLibrarySpans().At(0).Spans().Resize(1)
+	rms.At(0).InstrumentationLibrarySpans().At(0).Spans().At(0).SetName("foo")
+	otlp := TracesToOtlp(md)
+	size := 0
+	sizeBytes := 0
+	for _, rspans := range otlp {
+		size += rspans.Size()
+		bts, err := rspans.Marshal()
+		require.NoError(t, err)
+		sizeBytes += len(bts)
+	}
+	assert.Equal(t, size, md.Size())
+	assert.Equal(t, sizeBytes, md.Size())
+}
+
+func TestSizeWithNils(t *testing.T) {
+	assert.Equal(t, 0, TracesFromOtlp([]*otlptrace.ResourceSpans{nil, {}}).Size())
 }
 
 func TestSpanCountWithNils(t *testing.T) {
@@ -97,18 +123,18 @@ func TestResourceSpansWireCompatibility(t *testing.T) {
 	assert.NotNil(t, wire1)
 
 	// Unmarshal from the wire to OTLP Protobuf in goproto's representation.
-	var goprotoRS otlptrace_goproto.ResourceSpans
-	err = goproto.Unmarshal(wire1, &goprotoRS)
+	var goprotoMessage emptypb.Empty
+	err = goproto.Unmarshal(wire1, &goprotoMessage)
 	assert.NoError(t, err)
 
 	// Marshal to the wire again.
-	wire2, err := goproto.Marshal(&goprotoRS)
+	wire2, err := goproto.Marshal(&goprotoMessage)
 	assert.NoError(t, err)
 	assert.NotNil(t, wire2)
 
 	// Unmarshal from the wire into gogoproto's representation.
 	var gogoprotoRS2 otlptrace.ResourceSpans
-	err = gogoproto.Unmarshal(wire1, &gogoprotoRS2)
+	err = gogoproto.Unmarshal(wire2, &gogoprotoRS2)
 	assert.NoError(t, err)
 
 	// Now compare that the original and final ProtoBuf messages are the same.

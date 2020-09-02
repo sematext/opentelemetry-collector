@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//       http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -29,7 +29,6 @@ import (
 	"go.opentelemetry.io/collector/consumer/pdata"
 	"go.opentelemetry.io/collector/consumer/pdatautil"
 	"go.opentelemetry.io/collector/exporter/exportertest"
-	"go.opentelemetry.io/collector/internal/data"
 	"go.opentelemetry.io/collector/internal/data/testdata"
 )
 
@@ -111,7 +110,7 @@ func TestNewMetricsExporter(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.NoError(t, me.Start(context.Background(), componenttest.NewNopHost()))
-	assert.NoError(t, me.ConsumeMetrics(context.Background(), pdatautil.MetricsFromInternalMetrics(testdata.GenerateMetricDataEmpty())))
+	assert.NoError(t, me.ConsumeMetrics(context.Background(), pdatautil.MetricsFromInternalMetrics(testdata.GenerateMetricsEmpty())))
 	assert.NoError(t, me.Shutdown(context.Background()))
 }
 
@@ -127,11 +126,17 @@ func TestNewMetricsExporter_ProcessMetricsError(t *testing.T) {
 	want := errors.New("my_error")
 	me, err := NewMetricsProcessor(testCfg, exportertest.NewNopMetricsExporter(), newTestMProcessor(want))
 	require.NoError(t, err)
-	assert.Equal(t, want, me.ConsumeMetrics(context.Background(), pdatautil.MetricsFromInternalMetrics(testdata.GenerateMetricDataEmpty())))
+	assert.Equal(t, want, me.ConsumeMetrics(context.Background(), pdatautil.MetricsFromInternalMetrics(testdata.GenerateMetricsEmpty())))
 }
 
-func TestNewLogExporter(t *testing.T) {
-	me, err := NewLogProcessor(testCfg, exportertest.NewNopLogsExporter(), newTestLProcessor(nil))
+func TestNewMetricsExporter_ProcessMetricsErrSkipProcessingData(t *testing.T) {
+	me, err := NewMetricsProcessor(testCfg, exportertest.NewNopMetricsExporter(), newTestMProcessor(ErrSkipProcessingData))
+	require.NoError(t, err)
+	assert.Equal(t, nil, me.ConsumeMetrics(context.Background(), pdatautil.MetricsFromInternalMetrics(testdata.GenerateMetricsEmpty())))
+}
+
+func TestNewLogsExporter(t *testing.T) {
+	me, err := NewLogsProcessor(testCfg, exportertest.NewNopLogsExporter(), newTestLProcessor(nil))
 	require.NoError(t, err)
 
 	assert.NoError(t, me.Start(context.Background(), componenttest.NewNopHost()))
@@ -139,17 +144,17 @@ func TestNewLogExporter(t *testing.T) {
 	assert.NoError(t, me.Shutdown(context.Background()))
 }
 
-func TestNewLogExporter_NilRequiredFields(t *testing.T) {
-	_, err := NewLogProcessor(testCfg, exportertest.NewNopLogsExporter(), nil)
+func TestNewLogsExporter_NilRequiredFields(t *testing.T) {
+	_, err := NewLogsProcessor(testCfg, exportertest.NewNopLogsExporter(), nil)
 	assert.Error(t, err)
 
-	_, err = NewLogProcessor(testCfg, nil, newTestLProcessor(nil))
+	_, err = NewLogsProcessor(testCfg, nil, newTestLProcessor(nil))
 	assert.Equal(t, componenterror.ErrNilNextConsumer, err)
 }
 
-func TestNewLogExporter_ProcessLogError(t *testing.T) {
+func TestNewLogsExporter_ProcessLogError(t *testing.T) {
 	want := errors.New("my_error")
-	me, err := NewLogProcessor(testCfg, exportertest.NewNopLogsExporter(), newTestLProcessor(want))
+	me, err := NewLogsProcessor(testCfg, exportertest.NewNopLogsExporter(), newTestLProcessor(want))
 	require.NoError(t, err)
 	assert.Equal(t, want, me.ConsumeLogs(context.Background(), testdata.GenerateLogDataEmpty()))
 }
@@ -186,6 +191,6 @@ func newTestLProcessor(retError error) LProcessor {
 	return &testLProcessor{retError: retError}
 }
 
-func (tlp *testLProcessor) ProcessLogs(_ context.Context, ld data.Logs) (data.Logs, error) {
+func (tlp *testLProcessor) ProcessLogs(_ context.Context, ld pdata.Logs) (pdata.Logs, error) {
 	return ld, tlp.retError
 }

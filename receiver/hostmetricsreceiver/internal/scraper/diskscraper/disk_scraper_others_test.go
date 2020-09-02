@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//       http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -59,7 +59,9 @@ func TestScrapeMetrics_Others(t *testing.T) {
 
 	for _, test := range testCases {
 		t.Run(test.name, func(t *testing.T) {
-			scraper := newDiskScraper(context.Background(), &Config{})
+			scraper, err := newDiskScraper(context.Background(), &Config{})
+			require.NoError(t, err, "Failed to create disk scraper: %v", err)
+
 			if test.bootTimeFunc != nil {
 				scraper.bootTime = test.bootTimeFunc
 			}
@@ -67,7 +69,7 @@ func TestScrapeMetrics_Others(t *testing.T) {
 				scraper.ioCounters = test.ioCountersFunc
 			}
 
-			err := scraper.Initialize(context.Background())
+			err = scraper.Initialize(context.Background())
 			if test.initializationErr != "" {
 				assert.EqualError(t, err, test.initializationErr)
 				return
@@ -83,12 +85,13 @@ func TestScrapeMetrics_Others(t *testing.T) {
 
 			require.NoError(t, err, "Failed to scrape metrics: %v", err)
 
-			assertDiskMetricValid(t, metrics.At(0), diskIODescriptor, test.expectedStartTime)
-			assertDiskMetricValid(t, metrics.At(1), diskOpsDescriptor, test.expectedStartTime)
-			assertDiskMetricValid(t, metrics.At(2), diskTimeDescriptor, test.expectedStartTime)
+			assertInt64DiskMetricValid(t, metrics.At(0), diskIODescriptor, test.expectedStartTime)
+			assertInt64DiskMetricValid(t, metrics.At(1), diskOpsDescriptor, test.expectedStartTime)
+			assertDoubleDiskMetricValid(t, metrics.At(2), diskTimeDescriptor, test.expectedStartTime)
+			assertDiskPendingOperationsMetricValid(t, metrics.At(3))
 
 			if runtime.GOOS == "linux" {
-				assertDiskMetricValid(t, metrics.At(3), diskMergedDescriptor, test.expectedStartTime)
+				assertInt64DiskMetricValid(t, metrics.At(4), diskMergedDescriptor, test.expectedStartTime)
 			}
 		})
 	}

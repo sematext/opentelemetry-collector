@@ -1,10 +1,10 @@
-// Copyright 2020, OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//       http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -39,7 +39,7 @@ func TestGenerateParentSpan(t *testing.T) {
 	assert.Equal(t, traceID, span.TraceId)
 	assert.Nil(t, span.ParentSpanId)
 	assert.Equal(t, 11, len(span.Attributes))
-	assert.Equal(t, otlptrace.Status_Ok, span.Status.Code)
+	assert.Equal(t, otlptrace.Status_STATUS_CODE_OK, span.Status.Code)
 }
 
 func TestGenerateChildSpan(t *testing.T) {
@@ -58,8 +58,8 @@ func TestGenerateChildSpan(t *testing.T) {
 	span := GenerateSpan(traceID, parentID, "get_test_info", spanInputs, random)
 	assert.Equal(t, traceID, span.TraceId)
 	assert.Equal(t, parentID, span.ParentSpanId)
-	assert.Equal(t, 8, len(span.Attributes))
-	assert.Equal(t, otlptrace.Status_Ok, span.Status.Code)
+	assert.Equal(t, 12, len(span.Attributes))
+	assert.Equal(t, otlptrace.Status_STATUS_CODE_OK, span.Status.Code)
 }
 
 func TestGenerateSpans(t *testing.T) {

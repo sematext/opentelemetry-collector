@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//       http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -29,7 +29,6 @@ import (
 	"go.opentelemetry.io/collector/config/configgrpc"
 	"go.opentelemetry.io/collector/config/confighttp"
 	"go.opentelemetry.io/collector/config/confignet"
-	"go.opentelemetry.io/collector/config/configprotocol"
 	"go.opentelemetry.io/collector/config/configtls"
 )
 
@@ -95,8 +94,8 @@ func TestCreateTLSGPRCEndpoint(t *testing.T) {
 		},
 		TLSSetting: &configtls.TLSServerSetting{
 			TLSSetting: configtls.TLSSetting{
-				CertFile: "./testdata/certificate.pem",
-				KeyFile:  "./testdata/key.pem",
+				CertFile: "./testdata/server.crt",
+				KeyFile:  "./testdata/server.key",
 			},
 		},
 	}
@@ -124,7 +123,7 @@ func TestCreateInvalidThriftBinaryEndpoint(t *testing.T) {
 	factory := NewFactory()
 	cfg := factory.CreateDefaultConfig()
 
-	cfg.(*Config).Protocols.ThriftBinary = &configprotocol.ProtocolServerSettings{
+	cfg.(*Config).Protocols.ThriftBinary = &confignet.TCPAddr{
 		Endpoint: defaultThriftBinaryBindEndpoint,
 	}
 	params := component.ReceiverCreateParams{Logger: zap.NewNop()}
@@ -138,7 +137,7 @@ func TestCreateInvalidThriftCompactEndpoint(t *testing.T) {
 	factory := NewFactory()
 	cfg := factory.CreateDefaultConfig()
 
-	cfg.(*Config).Protocols.ThriftCompact = &configprotocol.ProtocolServerSettings{
+	cfg.(*Config).Protocols.ThriftCompact = &confignet.TCPAddr{
 		Endpoint: defaultThriftCompactBindEndpoint,
 	}
 	params := component.ReceiverCreateParams{Logger: zap.NewNop()}
@@ -153,7 +152,7 @@ func TestDefaultAgentRemoteSamplingEndpointAndPort(t *testing.T) {
 	cfg := factory.CreateDefaultConfig()
 	rCfg := cfg.(*Config)
 
-	rCfg.Protocols.ThriftCompact = &configprotocol.ProtocolServerSettings{
+	rCfg.Protocols.ThriftCompact = &confignet.TCPAddr{
 		Endpoint: defaultThriftCompactBindEndpoint,
 	}
 	rCfg.RemoteSampling = &RemoteSamplingConfig{}
@@ -171,7 +170,7 @@ func TestAgentRemoteSamplingEndpoint(t *testing.T) {
 	rCfg := cfg.(*Config)
 
 	endpoint := "localhost:1234"
-	rCfg.Protocols.ThriftCompact = &configprotocol.ProtocolServerSettings{
+	rCfg.Protocols.ThriftCompact = &confignet.TCPAddr{
 		Endpoint: defaultThriftCompactBindEndpoint,
 	}
 	rCfg.RemoteSampling = &RemoteSamplingConfig{
@@ -241,7 +240,7 @@ func TestThriftBinaryBadPort(t *testing.T) {
 	factory := NewFactory()
 	cfg := factory.CreateDefaultConfig()
 
-	cfg.(*Config).Protocols.ThriftBinary = &configprotocol.ProtocolServerSettings{
+	cfg.(*Config).Protocols.ThriftBinary = &confignet.TCPAddr{
 		Endpoint: "localhost:65536",
 	}
 	params := component.ReceiverCreateParams{Logger: zap.NewNop()}
@@ -253,7 +252,7 @@ func TestThriftCompactBadPort(t *testing.T) {
 	factory := NewFactory()
 	cfg := factory.CreateDefaultConfig()
 
-	cfg.(*Config).Protocols.ThriftCompact = &configprotocol.ProtocolServerSettings{
+	cfg.(*Config).Protocols.ThriftCompact = &confignet.TCPAddr{
 		Endpoint: "localhost:65536",
 	}
 
@@ -299,7 +298,7 @@ func TestRemoteSamplingFileRequiresGRPC(t *testing.T) {
 
 	// Remove all default protocols
 	rCfg.Protocols = Protocols{}
-	rCfg.Protocols.ThriftCompact = &configprotocol.ProtocolServerSettings{
+	rCfg.Protocols.ThriftCompact = &confignet.TCPAddr{
 		Endpoint: defaultThriftCompactBindEndpoint,
 	}
 	rCfg.RemoteSampling = &RemoteSamplingConfig{
@@ -314,12 +313,12 @@ func TestRemoteSamplingFileRequiresGRPC(t *testing.T) {
 func TestCustomUnmarshalErrors(t *testing.T) {
 	factory := NewFactory()
 
-	f := factory.CustomUnmarshaler()
-	assert.NotNil(t, f, "custom unmarshal function should not be nil")
+	fu, ok := factory.(component.ConfigUnmarshaler)
+	assert.True(t, ok)
 
-	err := f(config.NewViper(), nil)
+	err := fu.Unmarshal(config.NewViper(), nil)
 	assert.Error(t, err, "should not have been able to marshal to a nil config")
 
-	err = f(config.NewViper(), &RemoteSamplingConfig{})
+	err = fu.Unmarshal(config.NewViper(), &RemoteSamplingConfig{})
 	assert.Error(t, err, "should not have been able to marshal to a non-jaegerreceiver config")
 }

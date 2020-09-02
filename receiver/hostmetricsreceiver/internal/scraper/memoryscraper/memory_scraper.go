@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//       http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -21,6 +21,7 @@ import (
 	"github.com/shirou/gopsutil/mem"
 
 	"go.opentelemetry.io/collector/consumer/pdata"
+	"go.opentelemetry.io/collector/receiver/hostmetricsreceiver/internal"
 )
 
 // scraper for Memory Metrics
@@ -50,27 +51,28 @@ func (s *scraper) Close(_ context.Context) error {
 func (s *scraper) ScrapeMetrics(_ context.Context) (pdata.MetricSlice, error) {
 	metrics := pdata.NewMetricSlice()
 
+	now := internal.TimeToUnixNano(time.Now())
 	memInfo, err := s.virtualMemory()
 	if err != nil {
 		return metrics, err
 	}
 
 	metrics.Resize(1)
-	initializeMemoryUsageMetric(metrics.At(0), memInfo)
+	initializeMemoryUsageMetric(metrics.At(0), now, memInfo)
 	return metrics, nil
 }
 
-func initializeMemoryUsageMetric(metric pdata.Metric, memInfo *mem.VirtualMemoryStat) {
-	memoryUsageDescriptor.CopyTo(metric.MetricDescriptor())
+func initializeMemoryUsageMetric(metric pdata.Metric, now pdata.TimestampUnixNano, memInfo *mem.VirtualMemoryStat) {
+	memoryUsageDescriptor.CopyTo(metric)
 
-	idps := metric.Int64DataPoints()
+	idps := metric.IntSum().DataPoints()
 	idps.Resize(memStatesLen)
-	appendMemoryUsageStateDataPoints(idps, memInfo)
+	appendMemoryUsageStateDataPoints(idps, now, memInfo)
 }
 
-func initializeMemoryUsageDataPoint(dataPoint pdata.Int64DataPoint, stateLabel string, value int64) {
+func initializeMemoryUsageDataPoint(dataPoint pdata.IntDataPoint, now pdata.TimestampUnixNano, stateLabel string, value int64) {
 	labelsMap := dataPoint.LabelsMap()
 	labelsMap.Insert(stateLabelName, stateLabel)
-	dataPoint.SetTimestamp(pdata.TimestampUnixNano(uint64(time.Now().UnixNano())))
+	dataPoint.SetTimestamp(now)
 	dataPoint.SetValue(value)
 }

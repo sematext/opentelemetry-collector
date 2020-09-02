@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//       http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -26,7 +26,6 @@ import (
 
 	"go.opentelemetry.io/collector/consumer/pdata"
 	"go.opentelemetry.io/collector/consumer/pdatautil"
-	"go.opentelemetry.io/collector/internal/data"
 	"go.opentelemetry.io/collector/obsreport"
 	"go.opentelemetry.io/collector/processor"
 )
@@ -153,7 +152,7 @@ func (ml *memoryLimiter) ProcessMetrics(ctx context.Context, md pdata.Metrics) (
 }
 
 // ProcessLogs implements the LProcessor interface
-func (ml *memoryLimiter) ProcessLogs(ctx context.Context, ld data.Logs) (data.Logs, error) {
+func (ml *memoryLimiter) ProcessLogs(ctx context.Context, ld pdata.Logs) (pdata.Logs, error) {
 	numRecords := ld.LogRecordCount()
 	if ml.forcingDrop() {
 		// TODO: actually to be 100% sure that this is "refused" and not "dropped"
@@ -178,13 +177,11 @@ func (ml *memoryLimiter) readMemStats(ms *runtime.MemStats) {
 	// a misconfiguration is possible check for that here.
 	if ms.Alloc >= ml.ballastSize {
 		ms.Alloc -= ml.ballastSize
-	} else {
+	} else if !ml.configMismatchedLogged {
 		// This indicates misconfiguration. Log it once.
-		if !ml.configMismatchedLogged {
-			ml.configMismatchedLogged = true
-			ml.logger.Warn(typeStr + " is likely incorrectly configured. " + ballastSizeMibKey +
-				" must be set equal to --mem-ballast-size-mib command line option.")
-		}
+		ml.configMismatchedLogged = true
+		ml.logger.Warn(typeStr + " is likely incorrectly configured. " + ballastSizeMibKey +
+			" must be set equal to --mem-ballast-size-mib command line option.")
 	}
 }
 

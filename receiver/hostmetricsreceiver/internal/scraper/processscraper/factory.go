@@ -1,10 +1,10 @@
-// Copyright 2020, OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//       http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -43,7 +43,7 @@ func (f *Factory) CreateDefaultConfig() internal.Config {
 
 // CreateMetricsScraper creates a resource scraper based on provided config.
 func (f *Factory) CreateMetricsScraper(
-	ctx context.Context,
+	_ context.Context,
 	_ *zap.Logger,
 	config internal.Config,
 ) (internal.ResourceScraper, error) {

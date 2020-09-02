@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//       http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -15,8 +15,6 @@
 package opencensusexporter
 
 import (
-	"time"
-
 	"go.opentelemetry.io/collector/config/configgrpc"
 	"go.opentelemetry.io/collector/config/configmodels"
 )
@@ -29,7 +27,4 @@ type Config struct {
 
 	// The number of workers that send the gRPC requests.
 	NumWorkers int `mapstructure:"num_workers"`
-
-	// The time period between each reconnection performed by the exporter.
-	ReconnectionDelay time.Duration `mapstructure:"reconnection_delay,omitempty"`
 }

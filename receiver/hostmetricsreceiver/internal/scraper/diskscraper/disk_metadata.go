@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//       http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -34,42 +34,72 @@ const (
 
 // descriptors
 
-var diskIODescriptor = func() pdata.MetricDescriptor {
-	descriptor := pdata.NewMetricDescriptor()
-	descriptor.InitEmpty()
-	descriptor.SetName("system.disk.io")
-	descriptor.SetDescription("Disk bytes transferred.")
-	descriptor.SetUnit("bytes")
-	descriptor.SetType(pdata.MetricTypeMonotonicInt64)
-	return descriptor
+var diskIODescriptor = func() pdata.Metric {
+	metric := pdata.NewMetric()
+	metric.InitEmpty()
+	metric.SetName("system.disk.io")
+	metric.SetDescription("Disk bytes transferred.")
+	metric.SetUnit("bytes")
+	metric.SetDataType(pdata.MetricDataTypeIntSum)
+	sum := metric.IntSum()
+	sum.InitEmpty()
+	sum.SetIsMonotonic(true)
+	sum.SetAggregationTemporality(pdata.AggregationTemporalityCumulative)
+	return metric
 }()
 
-var diskOpsDescriptor = func() pdata.MetricDescriptor {
-	descriptor := pdata.NewMetricDescriptor()
-	descriptor.InitEmpty()
-	descriptor.SetName("system.disk.ops")
-	descriptor.SetDescription("Disk operations count.")
-	descriptor.SetUnit("1")
-	descriptor.SetType(pdata.MetricTypeMonotonicInt64)
-	return descriptor
+var diskOpsDescriptor = func() pdata.Metric {
+	metric := pdata.NewMetric()
+	metric.InitEmpty()
+	metric.SetName("system.disk.ops")
+	metric.SetDescription("Disk operations count.")
+	metric.SetUnit("1")
+	metric.SetDataType(pdata.MetricDataTypeIntSum)
+	sum := metric.IntSum()
+	sum.InitEmpty()
+	sum.SetIsMonotonic(true)
+	sum.SetAggregationTemporality(pdata.AggregationTemporalityCumulative)
+	return metric
 }()
 
-var diskTimeDescriptor = func() pdata.MetricDescriptor {
-	descriptor := pdata.NewMetricDescriptor()
-	descriptor.InitEmpty()
-	descriptor.SetName("system.disk.time")
-	descriptor.SetDescription("Time spent in disk operations.")
-	descriptor.SetUnit("ms")
-	descriptor.SetType(pdata.MetricTypeMonotonicInt64)
-	return descriptor
+var diskTimeDescriptor = func() pdata.Metric {
+	metric := pdata.NewMetric()
+	metric.InitEmpty()
+	metric.SetName("system.disk.time")
+	metric.SetDescription("Time spent in disk operations.")
+	metric.SetUnit("s")
+	metric.SetDataType(pdata.MetricDataTypeDoubleSum)
+	sum := metric.DoubleSum()
+	sum.InitEmpty()
+	sum.SetIsMonotonic(true)
+	sum.SetAggregationTemporality(pdata.AggregationTemporalityCumulative)
+	return metric
 }()
 
-var diskMergedDescriptor = func() pdata.MetricDescriptor {
-	descriptor := pdata.NewMetricDescriptor()
-	descriptor.InitEmpty()
-	descriptor.SetName("system.disk.merged")
-	descriptor.SetDescription("The number of disk reads merged into single physical disk access operations.")
-	descriptor.SetUnit("1")
-	descriptor.SetType(pdata.MetricTypeMonotonicInt64)
-	return descriptor
+var diskPendingOperationsDescriptor = func() pdata.Metric {
+	metric := pdata.NewMetric()
+	metric.InitEmpty()
+	metric.SetName("system.disk.pending_operations")
+	metric.SetDescription("The queue size of pending I/O operations.")
+	metric.SetUnit("1")
+	metric.SetDataType(pdata.MetricDataTypeIntSum)
+	sum := metric.IntSum()
+	sum.InitEmpty()
+	sum.SetIsMonotonic(false)
+	sum.SetAggregationTemporality(pdata.AggregationTemporalityCumulative)
+	return metric
+}()
+
+var diskMergedDescriptor = func() pdata.Metric {
+	metric := pdata.NewMetric()
+	metric.InitEmpty()
+	metric.SetName("system.disk.merged")
+	metric.SetDescription("The number of disk reads merged into single physical disk access operations.")
+	metric.SetUnit("1")
+	metric.SetDataType(pdata.MetricDataTypeIntSum)
+	sum := metric.IntSum()
+	sum.InitEmpty()
+	sum.SetIsMonotonic(true)
+	sum.SetAggregationTemporality(pdata.AggregationTemporalityCumulative)
+	return metric
 }()

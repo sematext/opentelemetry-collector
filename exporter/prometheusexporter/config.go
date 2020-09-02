@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//       http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -15,7 +15,7 @@
 package prometheusexporter
 
 import (
-	prometheus_golang "github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"go.opentelemetry.io/collector/config/configmodels"
 )
@@ -31,5 +31,5 @@ type Config struct {
 	Namespace string `mapstructure:"namespace"`
 
 	// ConstLabels are values that are applied for every exported metric.
-	ConstLabels prometheus_golang.Labels `mapstructure:"const_labels"`
+	ConstLabels prometheus.Labels `mapstructure:"const_labels"`
 }

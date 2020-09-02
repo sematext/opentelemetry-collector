@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//       http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -33,8 +33,7 @@ func TestZPagesExtensionUsage(t *testing.T) {
 		Endpoint: testutil.GetAvailableLocalAddress(t),
 	}
 
-	zpagesExt, err := newServer(config, zap.NewNop())
-	require.NoError(t, err)
+	zpagesExt := newServer(config, zap.NewNop())
 	require.NotNil(t, zpagesExt)
 
 	require.NoError(t, zpagesExt.Start(context.Background(), componenttest.NewNopHost()))
@@ -63,8 +62,7 @@ func TestZPagesExtensionPortAlreadyInUse(t *testing.T) {
 	config := Config{
 		Endpoint: endpoint,
 	}
-	zpagesExt, err := newServer(config, zap.NewNop())
-	require.NoError(t, err)
+	zpagesExt := newServer(config, zap.NewNop())
 	require.NotNil(t, zpagesExt)
 
 	require.Error(t, zpagesExt.Start(context.Background(), componenttest.NewNopHost()))
@@ -75,8 +73,7 @@ func TestZPagesMultipleStarts(t *testing.T) {
 		Endpoint: testutil.GetAvailableLocalAddress(t),
 	}
 
-	zpagesExt, err := newServer(config, zap.NewNop())
-	require.NoError(t, err)
+	zpagesExt := newServer(config, zap.NewNop())
 	require.NotNil(t, zpagesExt)
 
 	require.NoError(t, zpagesExt.Start(context.Background(), componenttest.NewNopHost()))
@@ -91,8 +88,7 @@ func TestZPagesMultipleShutdowns(t *testing.T) {
 		Endpoint: testutil.GetAvailableLocalAddress(t),
 	}
 
-	zpagesExt, err := newServer(config, zap.NewNop())
-	require.NoError(t, err)
+	zpagesExt := newServer(config, zap.NewNop())
 	require.NotNil(t, zpagesExt)
 
 	require.NoError(t, zpagesExt.Start(context.Background(), componenttest.NewNopHost()))
@@ -105,8 +101,7 @@ func TestZPagesShutdownWithoutStart(t *testing.T) {
 		Endpoint: testutil.GetAvailableLocalAddress(t),
 	}
 
-	zpagesExt, err := newServer(config, zap.NewNop())
-	require.NoError(t, err)
+	zpagesExt := newServer(config, zap.NewNop())
 	require.NotNil(t, zpagesExt)
 
 	require.NoError(t, zpagesExt.Shutdown(context.Background()))

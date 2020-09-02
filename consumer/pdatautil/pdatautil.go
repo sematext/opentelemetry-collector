@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//       http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -20,7 +20,7 @@ import (
 	commonpb "github.com/census-instrumentation/opencensus-proto/gen-go/agent/common/v1"
 	metricspb "github.com/census-instrumentation/opencensus-proto/gen-go/metrics/v1"
 	resourcepb "github.com/census-instrumentation/opencensus-proto/gen-go/resource/v1"
-	"github.com/golang/protobuf/proto"
+	googleproto "google.golang.org/protobuf/proto"
 
 	"go.opentelemetry.io/collector/consumer/consumerdata"
 	"go.opentelemetry.io/collector/consumer/pdata"
@@ -36,7 +36,7 @@ func MetricsToMetricsData(md pdata.Metrics) []consumerdata.MetricsData {
 		return cmd
 	}
 	if ims, ok := md.InternalOpaque.(data.MetricData); ok {
-		return internaldata.MetricDataToOC(ims)
+		return internaldata.MetricsToOC(ims)
 	}
 	panic("Unsupported metrics type.")
 }
@@ -56,12 +56,12 @@ func MetricsToInternalMetrics(md pdata.Metrics) data.MetricData {
 		return ims
 	}
 	if cmd, ok := md.InternalOpaque.([]consumerdata.MetricsData); ok {
-		return internaldata.OCSliceToMetricData(cmd)
+		return internaldata.OCSliceToMetrics(cmd)
 	}
 	panic("Unsupported metrics type.")
 }
 
-// MetricsFromMetricsData returns the `pdata.Metrics` representation of the `data.MetricData`.
+// MetricsFromInternalMetrics returns the `pdata.Metrics` representation of the `data.MetricData`.
 //
 // This is a temporary function that will be removed when the new internal pdata.Metrics will be finalized.
 func MetricsFromInternalMetrics(md data.MetricData) pdata.Metrics {
@@ -78,7 +78,7 @@ func CloneMetrics(md pdata.Metrics) pdata.Metrics {
 	if ocmds, ok := md.InternalOpaque.([]consumerdata.MetricsData); ok {
 		clone := make([]consumerdata.MetricsData, 0, len(ocmds))
 		for _, ocmd := range ocmds {
-			clone = append(clone, CloneMetricsDataOld(ocmd))
+			clone = append(clone, cloneMetricsData(ocmd))
 		}
 		return pdata.Metrics{InternalOpaque: clone}
 	}
@@ -116,18 +116,22 @@ func MetricAndDataPointCount(md pdata.Metrics) (int, int) {
 	panic("Unsupported metrics type.")
 }
 
-// CloneMetricsDataOld copied from processors.cloneMetricsDataOld
-func CloneMetricsDataOld(md consumerdata.MetricsData) consumerdata.MetricsData {
+func MetricPointCount(md pdata.Metrics) int {
+	_, points := MetricAndDataPointCount(md)
+	return points
+}
+
+func cloneMetricsData(md consumerdata.MetricsData) consumerdata.MetricsData {
 	clone := consumerdata.MetricsData{
-		Node:     proto.Clone(md.Node).(*commonpb.Node),
-		Resource: proto.Clone(md.Resource).(*resourcepb.Resource),
+		Node:     googleproto.Clone(md.Node).(*commonpb.Node),
+		Resource: googleproto.Clone(md.Resource).(*resourcepb.Resource),
 	}
 
 	if md.Metrics != nil {
 		clone.Metrics = make([]*metricspb.Metric, 0, len(md.Metrics))
 
 		for _, metric := range md.Metrics {
-			metricClone := proto.Clone(metric).(*metricspb.Metric)
+			metricClone := googleproto.Clone(metric).(*metricspb.Metric)
 			clone.Metrics = append(clone.Metrics, metricClone)
 		}
 	}

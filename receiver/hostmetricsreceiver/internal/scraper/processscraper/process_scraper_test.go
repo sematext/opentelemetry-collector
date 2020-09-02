@@ -1,10 +1,10 @@
-// Copyright 2020, OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//       http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -69,13 +69,15 @@ func TestScrapeMetrics(t *testing.T) {
 	}
 
 	require.Greater(t, resourceMetrics.Len(), 1)
-	assertResourceAttributes(t, resourceMetrics)
+	assertProcessResourceAttributesExist(t, resourceMetrics)
 	assertCPUTimeMetricValid(t, resourceMetrics, expectedStartTime)
-	assertMemoryUsageMetricValid(t, resourceMetrics)
+	assertMemoryUsageMetricValid(t, physicalMemoryUsageDescriptor, resourceMetrics)
+	assertMemoryUsageMetricValid(t, virtualMemoryUsageDescriptor, resourceMetrics)
 	assertDiskIOMetricValid(t, resourceMetrics, expectedStartTime)
+	assertSameTimeStampForAllMetricsWithinResource(t, resourceMetrics)
 }
 
-func assertResourceAttributes(t *testing.T, resourceMetrics pdata.ResourceMetricsSlice) {
+func assertProcessResourceAttributesExist(t *testing.T, resourceMetrics pdata.ResourceMetricsSlice) {
 	for i := 0; i < resourceMetrics.Len(); i++ {
 		attr := resourceMetrics.At(0).Resource().Attributes()
 		internal.AssertContainsAttribute(t, attr, conventions.AttributeProcessID)
@@ -83,44 +85,53 @@ func assertResourceAttributes(t *testing.T, resourceMetrics pdata.ResourceMetric
 		internal.AssertContainsAttribute(t, attr, conventions.AttributeProcessExecutablePath)
 		internal.AssertContainsAttribute(t, attr, conventions.AttributeProcessCommand)
 		internal.AssertContainsAttribute(t, attr, conventions.AttributeProcessCommandLine)
-		internal.AssertContainsAttribute(t, attr, conventions.AttributeProcessUsername)
+		internal.AssertContainsAttribute(t, attr, conventions.AttributeProcessOwner)
 	}
 }
 
 func assertCPUTimeMetricValid(t *testing.T, resourceMetrics pdata.ResourceMetricsSlice, startTime pdata.TimestampUnixNano) {
 	cpuTimeMetric := getMetric(t, cpuTimeDescriptor, resourceMetrics)
-	internal.AssertDescriptorEqual(t, cpuTimeDescriptor, cpuTimeMetric.MetricDescriptor())
+	internal.AssertDescriptorEqual(t, cpuTimeDescriptor, cpuTimeMetric)
 	if startTime != 0 {
-		internal.AssertDoubleMetricStartTimeEquals(t, cpuTimeMetric, startTime)
+		internal.AssertDoubleSumMetricStartTimeEquals(t, cpuTimeMetric, startTime)
 	}
-	internal.AssertDoubleMetricLabelHasValue(t, cpuTimeMetric, 0, stateLabelName, userStateLabelValue)
-	internal.AssertDoubleMetricLabelHasValue(t, cpuTimeMetric, 1, stateLabelName, systemStateLabelValue)
+	internal.AssertDoubleSumMetricLabelHasValue(t, cpuTimeMetric, 0, stateLabelName, userStateLabelValue)
+	internal.AssertDoubleSumMetricLabelHasValue(t, cpuTimeMetric, 1, stateLabelName, systemStateLabelValue)
 	if runtime.GOOS == "linux" {
-		internal.AssertDoubleMetricLabelHasValue(t, cpuTimeMetric, 2, stateLabelName, waitStateLabelValue)
+		internal.AssertDoubleSumMetricLabelHasValue(t, cpuTimeMetric, 2, stateLabelName, waitStateLabelValue)
 	}
 }
 
-func assertMemoryUsageMetricValid(t *testing.T, resourceMetrics pdata.ResourceMetricsSlice) {
-	memoryUsageMetric := getMetric(t, memoryUsageDescriptor, resourceMetrics)
-	internal.AssertDescriptorEqual(t, memoryUsageDescriptor, memoryUsageMetric.MetricDescriptor())
+func assertMemoryUsageMetricValid(t *testing.T, descriptor pdata.Metric, resourceMetrics pdata.ResourceMetricsSlice) {
+	memoryUsageMetric := getMetric(t, descriptor, resourceMetrics)
+	internal.AssertDescriptorEqual(t, descriptor, memoryUsageMetric)
 }
 
 func assertDiskIOMetricValid(t *testing.T, resourceMetrics pdata.ResourceMetricsSlice, startTime pdata.TimestampUnixNano) {
 	diskIOMetric := getMetric(t, diskIODescriptor, resourceMetrics)
-	internal.AssertDescriptorEqual(t, diskIODescriptor, diskIOMetric.MetricDescriptor())
+	internal.AssertDescriptorEqual(t, diskIODescriptor, diskIOMetric)
 	if startTime != 0 {
-		internal.AssertInt64MetricStartTimeEquals(t, diskIOMetric, startTime)
+		internal.AssertIntSumMetricStartTimeEquals(t, diskIOMetric, startTime)
 	}
-	internal.AssertInt64MetricLabelHasValue(t, diskIOMetric, 0, directionLabelName, readDirectionLabelValue)
-	internal.AssertInt64MetricLabelHasValue(t, diskIOMetric, 1, directionLabelName, writeDirectionLabelValue)
+	internal.AssertIntSumMetricLabelHasValue(t, diskIOMetric, 0, directionLabelName, readDirectionLabelValue)
+	internal.AssertIntSumMetricLabelHasValue(t, diskIOMetric, 1, directionLabelName, writeDirectionLabelValue)
 }
 
-func getMetric(t *testing.T, descriptor pdata.MetricDescriptor, rms pdata.ResourceMetricsSlice) pdata.Metric {
+func assertSameTimeStampForAllMetricsWithinResource(t *testing.T, resourceMetrics pdata.ResourceMetricsSlice) {
+	for i := 0; i < resourceMetrics.Len(); i++ {
+		ilms := resourceMetrics.At(i).InstrumentationLibraryMetrics()
+		for j := 0; j < ilms.Len(); j++ {
+			internal.AssertSameTimeStampForAllMetrics(t, ilms.At(j).Metrics())
+		}
+	}
+}
+
+func getMetric(t *testing.T, descriptor pdata.Metric, rms pdata.ResourceMetricsSlice) pdata.Metric {
 	for i := 0; i < rms.Len(); i++ {
 		metrics := getMetricSlice(t, rms.At(i))
 		for j := 0; j < metrics.Len(); j++ {
 			metric := metrics.At(j)
-			if metric.MetricDescriptor().Name() == descriptor.Name() {
+			if metric.Name() == descriptor.Name() {
 				return metric
 			}
 		}
@@ -443,12 +454,16 @@ func TestScrapeMetrics_ProcessErrors(t *testing.T) {
 	}
 }
 
-func getExpectedLengthOfReturnedMetrics(expectedErrors ...error) int {
+func getExpectedLengthOfReturnedMetrics(timeError, memError, diskError error) int {
 	expectedLen := 0
-	for _, expectedErr := range expectedErrors {
-		if expectedErr == nil {
-			expectedLen++
-		}
+	if timeError == nil {
+		expectedLen++
+	}
+	if memError == nil {
+		expectedLen += 2
+	}
+	if diskError == nil {
+		expectedLen++
 	}
 	return expectedLen
 }

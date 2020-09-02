@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//       http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -21,6 +21,7 @@ import (
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/config/configmodels"
 	"go.opentelemetry.io/collector/consumer"
+	"go.opentelemetry.io/collector/internal/collector/telemetry"
 	"go.opentelemetry.io/collector/processor/processorhelper"
 )
 
@@ -59,7 +60,9 @@ func createTraceProcessor(
 	nextConsumer consumer.TraceConsumer,
 ) (component.TraceProcessor, error) {
 	oCfg := cfg.(*Config)
-	return newBatchTracesProcessor(params, nextConsumer, oCfg), nil
+	// error can be ignored, level is parsed at the service startup
+	level, _ := telemetry.GetLevel()
+	return newBatchTracesProcessor(params, nextConsumer, oCfg, level), nil
 }
 
 func createMetricsProcessor(
@@ -69,5 +72,6 @@ func createMetricsProcessor(
 	nextConsumer consumer.MetricsConsumer,
 ) (component.MetricsProcessor, error) {
 	oCfg := cfg.(*Config)
-	return newBatchMetricsProcessor(params, nextConsumer, oCfg), nil
+	level, _ := telemetry.GetLevel()
+	return newBatchMetricsProcessor(params, nextConsumer, oCfg, level), nil
 }

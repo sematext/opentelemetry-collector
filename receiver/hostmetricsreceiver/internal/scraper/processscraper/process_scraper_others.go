@@ -1,10 +1,10 @@
-// Copyright 2020, OpenTelemetry Authors
+// Copyright The OpenTelemetry Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//       http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -24,13 +24,13 @@ import (
 
 const cpuStatesLen = 0
 
-func appendCPUTimeStateDataPoints(ddps pdata.DoubleDataPointSlice, startTime pdata.TimestampUnixNano, cpuTime *cpu.TimesStat) {
+func appendCPUTimeStateDataPoints(ddps pdata.DoubleDataPointSlice, startTime, now pdata.TimestampUnixNano, cpuTime *cpu.TimesStat) {
 }
 
-func getProcessExecutable(proc processHandle) (*executableMetadata, error) {
+func getProcessExecutable(processHandle) (*executableMetadata, error) {
 	return nil, nil
 }
 
-func getProcessCommand(proc processHandle) (*commandMetadata, error) {
+func getProcessCommand(processHandle) (*commandMetadata, error) {
 	return nil, nil
 }

@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//       http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -37,7 +37,7 @@ func NewFactory() component.ProcessorFactory {
 		createDefaultConfig,
 		processorhelper.WithTraces(createTraceProcessor),
 		processorhelper.WithMetrics(createMetricsProcessor),
-		processorhelper.WithLogs(createLogProcessor))
+		processorhelper.WithLogs(createLogsProcessor))
 }
 
 // CreateDefaultConfig creates the default configuration for processor. Notice
@@ -87,17 +87,17 @@ func createMetricsProcessor(
 		processorhelper.WithShutdown(ml.shutdown))
 }
 
-func createLogProcessor(
+func createLogsProcessor(
 	_ context.Context,
 	params component.ProcessorCreateParams,
 	cfg configmodels.Processor,
-	nextConsumer consumer.LogConsumer,
-) (component.LogProcessor, error) {
+	nextConsumer consumer.LogsConsumer,
+) (component.LogsProcessor, error) {
 	ml, err := newMemoryLimiter(params.Logger, cfg.(*Config))
 	if err != nil {
 		return nil, err
 	}
-	return processorhelper.NewLogProcessor(
+	return processorhelper.NewLogsProcessor(
 		cfg,
 		nextConsumer,
 		ml,

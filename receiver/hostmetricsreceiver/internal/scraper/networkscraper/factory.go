@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//       http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -42,9 +42,13 @@ func (f *Factory) CreateDefaultConfig() internal.Config {
 // CreateMetricsScraper creates a scraper based on provided config.
 func (f *Factory) CreateMetricsScraper(
 	ctx context.Context,
-	logger *zap.Logger,
+	_ *zap.Logger,
 	config internal.Config,
 ) (internal.Scraper, error) {
-	cfg := config.(*Config)
-	return obsreportscraper.WrapScraper(newNetworkScraper(ctx, cfg), TypeStr), nil
+	scraper, err := newNetworkScraper(ctx, config.(*Config))
+	if err != nil {
+		return nil, err
+	}
+
+	return obsreportscraper.WrapScraper(scraper, TypeStr), nil
 }

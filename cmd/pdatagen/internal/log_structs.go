@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//       http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -17,18 +17,20 @@ package internal
 var logFile = &File{
 	Name: "log",
 	imports: []string{
-		`logsproto "go.opentelemetry.io/collector/internal/data/opentelemetry-proto-gen/logs/v1"`,
+		`otlplogs "go.opentelemetry.io/collector/internal/data/opentelemetry-proto-gen/logs/v1"`,
 	},
 	testImports: []string{
 		`"testing"`,
 		``,
 		`"github.com/stretchr/testify/assert"`,
 		``,
-		`logsproto "go.opentelemetry.io/collector/internal/data/opentelemetry-proto-gen/logs/v1"`,
+		`otlplogs "go.opentelemetry.io/collector/internal/data/opentelemetry-proto-gen/logs/v1"`,
 	},
 	structs: []baseStruct{
 		resourceLogsSlice,
 		resourceLogs,
+		instrumentationLibraryLogsSlice,
+		instrumentationLibraryLogs,
 		logSlice,
 		logRecord,
 	},
@@ -42,11 +44,30 @@ var resourceLogsSlice = &sliceStruct{
 var resourceLogs = &messageStruct{
 	structName:     "ResourceLogs",
 	description:    "// ResourceLogs is a collection of logs from a Resource.",
-	originFullName: "logsproto.ResourceLogs",
+	originFullName: "otlplogs.ResourceLogs",
 	fields: []baseField{
 		resourceField,
 		&sliceField{
-			fieldMame:       "Logs",
+			fieldName:       "InstrumentationLibraryLogs",
+			originFieldName: "InstrumentationLibraryLogs",
+			returnSlice:     instrumentationLibraryLogsSlice,
+		},
+	},
+}
+
+var instrumentationLibraryLogsSlice = &sliceStruct{
+	structName: "InstrumentationLibraryLogsSlice",
+	element:    instrumentationLibraryLogs,
+}
+
+var instrumentationLibraryLogs = &messageStruct{
+	structName:     "InstrumentationLibraryLogs",
+	description:    "// InstrumentationLibraryLogs is a collection of logs from a LibraryInstrumentation.",
+	originFullName: "otlplogs.InstrumentationLibraryLogs",
+	fields: []baseField{
+		instrumentationLibraryField,
+		&sliceField{
+			fieldName:       "Logs",
 			originFieldName: "Logs",
 			returnSlice:     logSlice,
 		},
@@ -61,11 +82,11 @@ var logSlice = &sliceStruct{
 var logRecord = &messageStruct{
 	structName:     "LogRecord",
 	description:    "// LogRecord are experimental implementation of OpenTelemetry Log Data Model.\n",
-	originFullName: "logsproto.LogRecord",
+	originFullName: "otlplogs.LogRecord",
 	fields: []baseField{
 		&primitiveTypedField{
-			fieldMame:       "Timestamp",
-			originFieldName: "TimestampUnixNano",
+			fieldName:       "Timestamp",
+			originFieldName: "TimeUnixNano",
 			returnType:      "TimestampUnixNano",
 			rawType:         "uint64",
 			defaultVal:      "TimestampUnixNano(0)",
@@ -74,7 +95,7 @@ var logRecord = &messageStruct{
 		traceIDField,
 		spanIDField,
 		&primitiveTypedField{
-			fieldMame:       "Flags",
+			fieldName:       "Flags",
 			originFieldName: "Flags",
 			returnType:      "uint32",
 			rawType:         "uint32",
@@ -82,35 +103,35 @@ var logRecord = &messageStruct{
 			testVal:         `uint32(0x01)`,
 		},
 		&primitiveField{
-			fieldMame:       "SeverityText",
+			fieldName:       "SeverityText",
 			originFieldName: "SeverityText",
 			returnType:      "string",
 			defaultVal:      `""`,
 			testVal:         `"INFO"`,
 		},
 		&primitiveTypedField{
-			fieldMame:       "SeverityNumber",
+			fieldName:       "SeverityNumber",
 			originFieldName: "SeverityNumber",
-			returnType:      "logsproto.SeverityNumber",
-			rawType:         "logsproto.SeverityNumber",
-			defaultVal:      `logsproto.SeverityNumber_UNDEFINED_SEVERITY_NUMBER`,
-			testVal:         `logsproto.SeverityNumber_INFO`,
+			returnType:      "SeverityNumber",
+			rawType:         "otlplogs.SeverityNumber",
+			defaultVal:      `SeverityNumberUNDEFINED`,
+			testVal:         `SeverityNumberINFO`,
 		},
 		&primitiveField{
-			fieldMame:       "ShortName",
-			originFieldName: "ShortName",
+			fieldName:       "Name",
+			originFieldName: "Name",
 			returnType:      "string",
 			defaultVal:      `""`,
 			testVal:         `"test_name"`,
 		},
-		&primitiveField{
-			fieldMame:       "Body",
-			originFieldName: "Body",
-			returnType:      "string",
-			defaultVal:      `""`,
-			testVal:         `"test log message"`,
-		},
+		bodyField,
 		attributes,
 		droppedAttributesCount,
 	},
+}
+
+var bodyField = &messageField{
+	fieldName:       "Body",
+	originFieldName: "Body",
+	returnMessage:   anyValue,
 }

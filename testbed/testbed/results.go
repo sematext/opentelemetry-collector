@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//       http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -84,7 +84,7 @@ func (r *PerformanceResults) Save() {
 }
 
 // Add results for one test.
-func (r *PerformanceResults) Add(testName string, result interface{}) {
+func (r *PerformanceResults) Add(_ string, result interface{}) {
 	testResult, ok := result.(*PerformanceTestResult)
 	if !ok {
 		return
@@ -103,7 +103,7 @@ func (r *PerformanceResults) Add(testName string, result interface{}) {
 			testResult.errorCause,
 		),
 	)
-	r.totalDuration = r.totalDuration + testResult.duration
+	r.totalDuration += testResult.duration
 }
 
 // CorrectnessResults implements the TestResultsSummary interface with fields suitable for reporting data translation
@@ -118,16 +118,16 @@ type CorrectnessResults struct {
 
 // CorrectnessTestResult reports the results of a single correctness test.
 type CorrectnessTestResult struct {
-	testName              string
-	result                string
-	duration              time.Duration
-	sentSpanCount         uint64
-	receivedSpanCount     uint64
-	assertionFailureCount uint64
-	assertionFailures     []*AssertionFailure
+	testName                   string
+	result                     string
+	duration                   time.Duration
+	sentSpanCount              uint64
+	receivedSpanCount          uint64
+	traceAssertionFailureCount uint64
+	traceAssertionFailures     []*TraceAssertionFailure
 }
 
-type AssertionFailure struct {
+type TraceAssertionFailure struct {
 	typeName      string
 	dataComboName string
 	fieldPath     string
@@ -136,7 +136,7 @@ type AssertionFailure struct {
 	sumCount      int
 }
 
-func (af AssertionFailure) String() string {
+func (af TraceAssertionFailure) String() string {
 	return fmt.Sprintf("%s/%s e=%#v a=%#v ", af.dataComboName, af.fieldPath, af.expectedValue, af.actualValue)
 }
 
@@ -160,12 +160,12 @@ func (r *CorrectnessResults) Init(resultsDir string) {
 			"----------------------------------------|------|-------:|---------:|-------------:|------------:|--------\n")
 }
 
-func (r *CorrectnessResults) Add(testName string, result interface{}) {
+func (r *CorrectnessResults) Add(_ string, result interface{}) {
 	testResult, ok := result.(*CorrectnessTestResult)
 	if !ok {
 		return
 	}
-	consolidated := consolidateAssertionFailures(testResult.assertionFailures)
+	consolidated := consolidateAssertionFailures(testResult.traceAssertionFailures)
 	failuresStr := ""
 	for _, af := range consolidated {
 		failuresStr = fmt.Sprintf("%s%s,%#v!=%#v,count=%d; ", failuresStr, af.fieldPath, af.expectedValue,
@@ -178,13 +178,13 @@ func (r *CorrectnessResults) Add(testName string, result interface{}) {
 			testResult.duration.Seconds(),
 			testResult.sentSpanCount,
 			testResult.receivedSpanCount,
-			testResult.assertionFailureCount,
+			testResult.traceAssertionFailureCount,
 			failuresStr,
 		),
 	)
 	r.perTestResults = append(r.perTestResults, testResult)
-	r.totalAssertionFailures = r.totalAssertionFailures + testResult.assertionFailureCount
-	r.totalDuration = r.totalDuration + testResult.duration
+	r.totalAssertionFailures += testResult.traceAssertionFailureCount
+	r.totalDuration += testResult.duration
 }
 
 func (r *CorrectnessResults) Save() {
@@ -195,23 +195,12 @@ func (r *CorrectnessResults) Save() {
 	r.resultsFile.Close()
 }
 
-func exists(path string) (bool, error) {
-	_, err := os.Stat(path)
-	if err == nil {
-		return true, nil
-	}
-	if os.IsNotExist(err) {
-		return false, nil
-	}
-	return true, err
-}
-
-func consolidateAssertionFailures(failures []*AssertionFailure) map[string]*AssertionFailure {
-	afMap := make(map[string]*AssertionFailure)
+func consolidateAssertionFailures(failures []*TraceAssertionFailure) map[string]*TraceAssertionFailure {
+	afMap := make(map[string]*TraceAssertionFailure)
 	for _, f := range failures {
 		summary := afMap[f.fieldPath]
 		if summary == nil {
-			summary = &AssertionFailure{
+			summary = &TraceAssertionFailure{
 				typeName:      f.typeName,
 				dataComboName: f.dataComboName + "...",
 				fieldPath:     f.fieldPath,

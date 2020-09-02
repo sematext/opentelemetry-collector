@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//       http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -24,17 +24,17 @@ import (
 
 const systemSpecificMetricsLen = 1
 
-func appendSystemSpecificMetrics(metrics pdata.MetricSlice, startIdx int, startTime pdata.TimestampUnixNano, ioCounters map[string]disk.IOCountersStat) {
+func appendSystemSpecificMetrics(metrics pdata.MetricSlice, startIdx int, startTime, now pdata.TimestampUnixNano, ioCounters map[string]disk.IOCountersStat) {
 	metric := metrics.At(startIdx)
-	diskMergedDescriptor.CopyTo(metric.MetricDescriptor())
+	diskMergedDescriptor.CopyTo(metric)
 
-	idps := metric.Int64DataPoints()
+	idps := metric.IntSum().DataPoints()
 	idps.Resize(2 * len(ioCounters))
 
 	idx := 0
 	for device, ioCounter := range ioCounters {
-		initializeDataPoint(idps.At(idx+0), startTime, device, readDirectionLabelValue, int64(ioCounter.MergedReadCount))
-		initializeDataPoint(idps.At(idx+1), startTime, device, writeDirectionLabelValue, int64(ioCounter.MergedWriteCount))
+		initializeInt64DataPoint(idps.At(idx+0), startTime, now, device, readDirectionLabelValue, int64(ioCounter.MergedReadCount))
+		initializeInt64DataPoint(idps.At(idx+1), startTime, now, device, writeDirectionLabelValue, int64(ioCounter.MergedWriteCount))
 		idx += 2
 	}
 }

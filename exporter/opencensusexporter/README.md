@@ -11,22 +11,25 @@ The following settings are required:
 
 The following settings can be optionally configured:
 
-- `cert_pem_file`: certificate file for TLS credentials of gRPC client. Should
-  only be used if `secure` is set to true.
-- `compression` (default = gzip): compression key for supported compression
-  types within collector. Currently the only supported mode is `gzip`.
-- `headers`: the headers associated with gRPC requests.
 - `insecure` (default = false): whether to enable client transport security for
   the exporter's gRPC connection. See
   [grpc.WithInsecure()](https://godoc.org/google.golang.org/grpc#WithInsecure).
-- `keepalive`: keepalive parameters for client gRPC. See
+- `ca_file` path to the CA cert. For a client this verifies the server certificate. Should
+  only be used if `insecure` is set to true.
+- `cert_file` path to the TLS cert to use for TLS required connections. Should
+  only be used if `insecure` is set to true.
+- `key_file` path to the TLS key to use for TLS required connections. Should
+  only be used if `insecure` is set to true.
+- `compression` (default = gzip): compression key for supported compression
+  types within collector. Currently the only supported mode is `gzip`.
+- `headers` the headers associated with gRPC requests.
+- `keepalive` keepalive parameters for client gRPC. See
   [grpc.WithKeepaliveParams()](https://godoc.org/google.golang.org/grpc#WithKeepaliveParams).
 - `num_workers` (default = 2): number of workers that send the gRPC requests.
   Optional.
-- `reconnection_delay` (default = unset): time period between each reconnection
-  performed by the exporter.
 - `balancer_name`(default = pick_first): Sets the balancer in grpclb_policy to discover the servers.
 See [grpc loadbalancing example](https://github.com/grpc/grpc-go/blob/master/examples/features/load_balancing/README.md).
+- `wait_for_ready`: Option not supported.
 
 Example:
 
@@ -34,7 +37,6 @@ Example:
 exporters:
   opencensus:
     endpoint: otelcol2:55678
-    reconnection_delay: 60s
 ```
 
 The full list of settings exposed for this exporter are documented [here](./config.go)

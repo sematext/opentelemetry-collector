@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//       http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -72,5 +72,5 @@ func (s *testScraper) ScrapeMetrics(ctx context.Context) (pdata.MetricSlice, err
 }
 
 func generateMetricsSlice() pdata.MetricSlice {
-	return testdata.GenerateMetricDataOneMetric().ResourceMetrics().At(0).InstrumentationLibraryMetrics().At(0).Metrics()
+	return testdata.GenerateMetricsOneMetric().ResourceMetrics().At(0).InstrumentationLibraryMetrics().At(0).Metrics()
 }

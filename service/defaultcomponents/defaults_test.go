@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//       http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -30,6 +30,7 @@ func TestDefaultComponents(t *testing.T) {
 		"health_check",
 		"pprof",
 		"zpages",
+		"fluentbit",
 	}
 	expectedReceivers := []configmodels.Type{
 		"jaeger",
@@ -38,6 +39,8 @@ func TestDefaultComponents(t *testing.T) {
 		"opencensus",
 		"otlp",
 		"hostmetrics",
+		"fluentforward",
+		"kafka",
 	}
 	expectedProcessors := []configmodels.Type{
 		"attributes",
@@ -49,15 +52,18 @@ func TestDefaultComponents(t *testing.T) {
 		"probabilistic_sampler",
 		"span",
 		"filter",
+		"groupbytrace",
 	}
 	expectedExporters := []configmodels.Type{
 		"opencensus",
 		"prometheus",
+		"prometheusremotewrite",
 		"logging",
 		"zipkin",
 		"jaeger",
 		"file",
 		"otlp",
+		"kafka",
 	}
 
 	factories, err := Components()

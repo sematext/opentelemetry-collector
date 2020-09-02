@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//       http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -26,17 +26,16 @@ import (
 	"testing"
 
 	zipkinmodel "github.com/openzipkin/zipkin-go/model"
-	zipkinproto "github.com/openzipkin/zipkin-go/proto/v2"
+	"github.com/openzipkin/zipkin-go/proto/zipkin_proto3"
 	zipkinreporter "github.com/openzipkin/zipkin-go/reporter"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
+	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/component/componenttest"
 	"go.opentelemetry.io/collector/config/confighttp"
 	"go.opentelemetry.io/collector/config/configmodels"
-	"go.opentelemetry.io/collector/consumer"
-	"go.opentelemetry.io/collector/processor"
 	"go.opentelemetry.io/collector/receiver/zipkinreceiver"
 	"go.opentelemetry.io/collector/testutil"
 )
@@ -52,7 +51,7 @@ import (
 // The rest of the fields should match up exactly
 func TestZipkinExporter_roundtripJSON(t *testing.T) {
 	buf := new(bytes.Buffer)
-	sizes := []int64{}
+	var sizes []int64
 	cst := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		s, _ := io.Copy(buf, r.Body)
 		sizes = append(sizes, s)
@@ -66,16 +65,15 @@ func TestZipkinExporter_roundtripJSON(t *testing.T) {
 		},
 		Format: "json",
 	}
-	tes, err := newTraceExporter(config)
+	zexp, err := newTraceExporter(config)
 	assert.NoError(t, err)
-	require.NotNil(t, tes)
+	require.NotNil(t, zexp)
 
 	// The test requires the spans from zipkinSpansJSONJavaLibrary to be sent in a single batch, use
 	// a mock to ensure that this happens as intended.
 	mzr := newMockZipkinReporter(cst.URL)
 
 	// Run the Zipkin receiver to "receive spans upload from a client application"
-	zexp := processor.NewTraceFanOutConnectorOld([]consumer.TraceConsumerOld{tes})
 	addr := testutil.GetAvailableLocalAddress(t)
 	cfg := &zipkinreceiver.Config{
 		ReceiverSettings: configmodels.ReceiverSettings{
@@ -116,7 +114,7 @@ func TestZipkinExporter_roundtripJSON(t *testing.T) {
 		  "tags": {"http.path": "/api","clnt/finagle.version": "6.45.0"}
 		},
 		{
-		  "traceId": "4d1e00c0db9010db86154a4ba6e91385","parentId": "86154a4ba6e91386","id": "4d1e00c0db9010db",
+		  "traceId": "4d1e00c0db9010db86154a4ba6e91385","parentId": "86154a4ba6e91386","id": "4d1e00c0db9010dc",
 		  "kind": "SERVER","name": "put",
 		  "timestamp": 1472470996199000,"duration": 207000,
 		  "localEndpoint": {"serviceName": "frontend","ipv6": "7::80:807f"},
@@ -126,12 +124,11 @@ func TestZipkinExporter_roundtripJSON(t *testing.T) {
 		    {"timestamp": 1472470996403000,"value": "bar"}
 		  ],
 		  "tags": {"http.path": "/api","clnt/finagle.version": "6.45.0"}
-		}]
-		`, `
-		[{
+		},
+		{
 		  "traceId": "4d1e00c0db9010db86154a4ba6e91385",
 		  "parentId": "86154a4ba6e91386",
-		  "id": "4d1e00c0db9010db",
+		  "id": "4d1e00c0db9010dd",
 		  "kind": "SERVER",
 		  "name": "put",
 		  "timestamp": 1472470996199000,
@@ -139,10 +136,19 @@ func TestZipkinExporter_roundtripJSON(t *testing.T) {
 		}]
 		`}
 	for i, s := range wants {
-		want := testutil.GenerateNormalizedJSON(t, s)
+		want := unmarshalZipkinSpanArrayToMap(t, s)
 		gotBytes := buf.Next(int(sizes[i]))
-		got := testutil.GenerateNormalizedJSON(t, string(gotBytes))
-		assert.Equal(t, want, got)
+		got := unmarshalZipkinSpanArrayToMap(t, string(gotBytes))
+		for id, expected := range want {
+			actual, ok := got[id]
+			assert.True(t, ok)
+			assert.Equal(t, expected.ID, actual.ID)
+			assert.Equal(t, expected.Name, actual.Name)
+			assert.Equal(t, expected.TraceID, actual.TraceID)
+			assert.Equal(t, expected.Timestamp, actual.Timestamp)
+			assert.Equal(t, expected.Duration, actual.Duration)
+			assert.Equal(t, expected.Kind, actual.Kind)
+		}
 	}
 }
 
@@ -153,7 +159,7 @@ type mockZipkinReporter struct {
 	serializer zipkinreporter.SpanSerializer
 }
 
-var _ (zipkinreporter.Reporter) = (*mockZipkinReporter)(nil)
+var _ zipkinreporter.Reporter = (*mockZipkinReporter)(nil)
 
 func (r *mockZipkinReporter) Send(span zipkinmodel.SpanModel) {
 	r.batch = append(r.batch, &span)
@@ -237,7 +243,7 @@ const zipkinSpansJSONJavaLibrary = `
 {
   "traceId": "4d1e00c0db9010db86154a4ba6e91385",
   "parentId": "86154a4ba6e91386",
-  "id": "4d1e00c0db9010db",
+  "id": "4d1e00c0db9010dc",
   "kind": "SERVER",
   "name": "put",
   "timestamp": 1472470996199000,
@@ -269,7 +275,7 @@ const zipkinSpansJSONJavaLibrary = `
 {
   "traceId": "4d1e00c0db9010db86154a4ba6e91385",
   "parentId": "86154a4ba6e91386",
-  "id": "4d1e00c0db9010db",
+  "id": "4d1e00c0db9010dd",
   "kind": "SERVER",
   "name": "put",
   "timestamp": 1472470996199000,
@@ -284,8 +290,9 @@ func TestZipkinExporter_invalidFormat(t *testing.T) {
 		},
 		Format: "foobar",
 	}
-	f := &Factory{}
-	_, err := f.CreateTraceExporter(zap.NewNop(), config)
+	f := NewFactory()
+	params := component.ExporterCreateParams{Logger: zap.NewNop()}
+	_, err := f.CreateTraceExporter(context.Background(), params, config)
 	require.Error(t, err)
 }
 
@@ -306,17 +313,16 @@ func TestZipkinExporter_roundtripProto(t *testing.T) {
 		},
 		Format: "proto",
 	}
-	tes, err := newTraceExporter(config)
+	zexp, err := newTraceExporter(config)
 	require.NoError(t, err)
 
 	// The test requires the spans from zipkinSpansJSONJavaLibrary to be sent in a single batch, use
 	// a mock to ensure that this happens as intended.
 	mzr := newMockZipkinReporter(cst.URL)
 
-	mzr.serializer = zipkinproto.SpanSerializer{}
+	mzr.serializer = zipkin_proto3.SpanSerializer{}
 
 	// Run the Zipkin receiver to "receive spans upload from a client application"
-	zexp := processor.NewTraceFanOutConnectorOld([]consumer.TraceConsumerOld{tes})
 	port := testutil.GetAvailablePort(t)
 	cfg := &zipkinreceiver.Config{
 		ReceiverSettings: configmodels.ReceiverSettings{
@@ -343,11 +349,11 @@ func TestZipkinExporter_roundtripProto(t *testing.T) {
 	err = mzr.Flush()
 	require.NoError(t, err)
 
-	require.Equal(t, zipkinproto.SpanSerializer{}.ContentType(), contentType)
+	require.Equal(t, zipkin_proto3.SpanSerializer{}.ContentType(), contentType)
 	// Finally we need to inspect the output
 	gotBytes, err := ioutil.ReadAll(buf)
 	require.NoError(t, err)
 
-	_, err = zipkinproto.ParseSpans(gotBytes, false)
+	_, err = zipkin_proto3.ParseSpans(gotBytes, false)
 	require.NoError(t, err)
 }
