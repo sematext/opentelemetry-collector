@@ -17,6 +17,7 @@ package sematextexporter
 import (
 	"context"
 	"crypto/tls"
+	"strings"
 	"time"
 
 	influxdb2 "github.com/influxdata/influxdb-client-go"
@@ -26,6 +27,13 @@ import (
 	"go.opentelemetry.io/collector/consumer/pdata"
 	"go.opentelemetry.io/collector/consumer/pdatautil"
 	"go.opentelemetry.io/collector/exporter/exporterhelper"
+)
+
+type MetricsEndpoint string
+
+const (
+	USMetrics MetricsEndpoint = "https://spm-receiver.sematext.com:443/write?db=metrics&v=3.0.0&sct=APP"
+	EUMetrics MetricsEndpoint = "https://spm-receiver.eu.sematext.com:443/write?db=metrics&v=3.0.0&sct=APP"
 )
 
 // MetricsConduit todo doc comment
@@ -41,8 +49,18 @@ type MetricsConduit struct {
 // NewMetricsExporter todo doc comment
 func NewMetricsExporter(config *Config) (component.MetricsExporter, error) {
 
+	var endpoint string
 	config.MetricsConduitSettings.Conduit = MetricsConduit{}
 	conduit := config.MetricsConduitSettings.Conduit
+
+	switch strings.ToLower(conduit.config.Endpoint) {
+	case "usmetrics":
+		endpoint = string(USMetrics)
+	case "eumetrics":
+		endpoint = string(EUMetrics)
+	default:
+		endpoint = string(USMetrics)
+	}
 
 	conduit.influxdb.config = influxdb2.DefaultOptions()
 	conduit.influxdb.config.SetBatchSize(conduit.config.BatchSize)
@@ -53,7 +71,7 @@ func NewMetricsExporter(config *Config) (component.MetricsExporter, error) {
 	conduit.influxdb.config.SetUseGZip(true)
 	conduit.influxdb.config.SetTlsConfig(&tls.Config{InsecureSkipVerify: true})
 
-	conduit.influxdb.pool = influxdb2.NewClientWithOptions(conduit.config.Endpoint, conduit.config.Token, conduit.influxdb.config)
+	conduit.influxdb.pool = influxdb2.NewClientWithOptions(endpoint, conduit.config.Token, conduit.influxdb.config)
 	conduit.influxdb.bulk = conduit.influxdb.pool.WriteApi(conduit.config.Org, conduit.config.Bucket)
 
 	return exporterhelper.NewMetricsExporter(

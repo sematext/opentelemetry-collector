@@ -6,34 +6,27 @@ processors:
 
 exporters:
   sematext:
-  sematext/2:
-    loglevel: debug
-    sampling_initial: 10
-    sampling_thereafter: 50
-
-service:
-  pipelines:
-    traces:
-      receivers: [examplereceiver]
-      processors: [exampleprocessor]
-      exporters: [logging]
-    metrics:
-      receivers: [examplereceiver]
-      exporters: [logging, logging/2]
-
-
-
-receivers:
-  examplereceiver:
-
-processors:
-  exampleprocessor:
-
-exporters:
-  sematext:
-  sematext/2:
-
-
+    MetricsConduitSettings:
+      Token: ""
+      Org: "Example Org"
+      Bucket: "Example Bucket"
+      Endpoint: "USMetricsX"
+      BatchSize: 5000
+      FlushInterval: 5000
+      MaxRetries: 5
+      HttpRequestTimeout: 30000
+      RetryBufferLimit: 25000
+    LogsConduitSettings:
+      Token: ""
+      Endpoint: "USLogsX"
+      NumWorkers: 8
+      FlushBytes: 5242880
+      FlushInterval: 500000000
+      Index: ""
+      Human: false
+      Pretty: false
+      Refresh: "false"
+      Timeout: 20000000000
 
 service:
   pipelines:

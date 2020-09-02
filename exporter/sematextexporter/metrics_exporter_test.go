@@ -20,7 +20,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap"
 
 	"go.opentelemetry.io/collector/config/configmodels"
 	"go.opentelemetry.io/collector/consumer/pdatautil"
@@ -29,7 +28,11 @@ import (
 
 // TODO
 func TestLoggingMetricsExporterNoErrors(t *testing.T) {
-	lme, err := NewMetricsExporter(&configmodels.ExporterSettings{}, "debug", zap.NewNop())
+	lme, err := NewMetricsExporter(&Config{
+		ExporterSettings:       configmodels.ExporterSettings{},
+		MetricsConduitSettings: MetricsConfig{},
+		LogsConduitSettings:    LogsConfig{},
+	})
 	require.NotNil(t, lme)
 	assert.NoError(t, err)
 

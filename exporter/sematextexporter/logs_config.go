@@ -46,8 +46,8 @@ type LogsConfig struct {
 
 // LogsConfigSetDefaults contains default settings used in the factory.
 func (config *LogsConfig) LogsConfigSetDefaults() {
-	config.Token = ""    // TODO pull out of environment?
-	config.Endpoint = "" // TODO make this more friendly
+	config.Token = ""          // TODO pull out of environment?
+	config.Endpoint = "USLogs" // TODO make this more friendly
 	config.NumWorkers = int(runtime.NumCPU())
 	config.FlushBytes = int(5 * units.Mebibyte)
 	config.FlushInterval = 500 * time.Millisecond

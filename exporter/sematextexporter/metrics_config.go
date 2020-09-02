@@ -30,9 +30,9 @@ type MetricsConfig struct {
 
 // MetricsConfigSetDefaults contains default settings used in the factory.
 func (mc *MetricsConfig) MetricsConfigSetDefaults() {
-	mc.Org = "None"
-	mc.Bucket = "None"
-	mc.Endpoint = " https://spm-receiver.sematext.com:443/write?db=metrics&v=3.0.0&sct=APP" //TODO - make this more friendly
+	mc.Org = "Example Org"
+	mc.Bucket = "Example Bucket"
+	mc.Endpoint = "USMetrics"
 	mc.BatchSize = 5000
 	mc.FlushInterval = 5 * 1000
 	mc.MaxRetries = 5

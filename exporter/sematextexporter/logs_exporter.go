@@ -19,6 +19,7 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -36,6 +37,20 @@ import (
 
 // https://github.com/elastic/go-elasticsearch/blob/master/esutil/bulk_indexer.go
 // https://github.com/elastic/go-elasticsearch/tree/master/_examples/bulk#indexergo
+
+type endpointList struct {
+	usa    []string
+	europe []string
+}
+
+var endpoints endpointList = endpointList{
+	usa: []string{
+		"logsene-receiver.sematext.com:443",
+	},
+	europe: []string{
+		"logsene-receiver.eu.sematext.com:443",
+	},
+}
 
 // LogsConduit TODO doc comment
 type LogsConduit struct {
@@ -55,13 +70,25 @@ type LogsConduit struct {
 func NewLogsExporter(config *Config) (component.LogExporter, error) {
 
 	var err error
+	var addresses []string
 
 	config.LogsConduitSettings.Conduit = LogsConduit{}
 	conduit := config.LogsConduitSettings.Conduit
+
+	switch strings.ToLower(conduit.config.LogsConduitSettings.Endpoint) {
+	case "uslogs":
+		addresses = endpoints.usa
+	case "eulogs":
+		addresses = endpoints.europe
+	default:
+		addresses = endpoints.usa
+	}
+
 	conduit.config = config
 	conduit.backoff = backoff.NewExponentialBackOff()
 
 	conduit.elasticsearch.config = elasticsearch.Config{
+		Addresses:     addresses,
 		RetryOnStatus: []int{502, 503, 504, 429},
 		RetryBackoff:  config.LogsConduitSettings.Conduit.retryStrategy,
 		MaxRetries:    5,

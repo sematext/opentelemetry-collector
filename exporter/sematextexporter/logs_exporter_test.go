@@ -20,22 +20,25 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap"
 
 	"go.opentelemetry.io/collector/config/configmodels"
 	"go.opentelemetry.io/collector/internal/data/testdata"
 )
 
 func TestLoggingLogExporterNoErrors(t *testing.T) {
-	lle, err := NewLogsExporter(configmodels.ExporterSettings{}, "debug", zap.NewNop())
-	require.NotNil(t, lle)
+	e0, err := NewLogsExporter(&Config{
+		ExporterSettings:       configmodels.ExporterSettings{},
+		MetricsConduitSettings: MetricsConfig{},
+		LogsConduitSettings:    LogsConfig{},
+	})
+	require.NotNil(t, e0)
 	assert.NoError(t, err)
 
-	assert.NoError(t, lle.ConsumeLogs(context.Background(), testdata.GenerateLogDataEmpty()))
-	assert.NoError(t, lle.ConsumeLogs(context.Background(), testdata.GenerateLogDataOneEmptyResourceLogs()))
-	assert.NoError(t, lle.ConsumeLogs(context.Background(), testdata.GenerateLogDataOneEmptyOneNilResourceLogs()))
-	assert.NoError(t, lle.ConsumeLogs(context.Background(), testdata.GenerateLogDataNoLogRecords()))
-	assert.NoError(t, lle.ConsumeLogs(context.Background(), testdata.GenerateLogDataOneEmptyLogs()))
+	assert.NoError(t, e0.ConsumeLogs(context.Background(), testdata.GenerateLogDataEmpty()))
+	assert.NoError(t, e0.ConsumeLogs(context.Background(), testdata.GenerateLogDataOneEmptyResourceLogs()))
+	assert.NoError(t, e0.ConsumeLogs(context.Background(), testdata.GenerateLogDataOneEmptyOneNilResourceLogs()))
+	assert.NoError(t, e0.ConsumeLogs(context.Background(), testdata.GenerateLogDataNoLogRecords()))
+	assert.NoError(t, e0.ConsumeLogs(context.Background(), testdata.GenerateLogDataOneEmptyLogs()))
 
-	assert.NoError(t, lle.Shutdown(context.Background()))
+	assert.NoError(t, e0.Shutdown(context.Background()))
 }

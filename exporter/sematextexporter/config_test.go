@@ -37,14 +37,16 @@ func TestLoadConfig(t *testing.T) {
 	require.NotNil(t, cfg)
 
 	e0 := cfg.Exporters["sematext"]
-	assert.Equal(t, e0, factory.CreateDefaultConfig())
 
-	e1 := cfg.Exporters["sematext/2"]
-	assert.Equal(t, e1,
+	assert.Equal(t, e0,
 		&Config{
 			ExporterSettings: configmodels.ExporterSettings{
 				NameVal: "sematext",
 				TypeVal: "sematext",
 			},
-		})
+		},
+	)
+
+	assert.Equal(t, e0, factory.CreateDefaultConfig())
+
 }
