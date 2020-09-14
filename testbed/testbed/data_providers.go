@@ -27,8 +27,6 @@ import (
 	"go.uber.org/atomic"
 
 	"go.opentelemetry.io/collector/consumer/pdata"
-	"go.opentelemetry.io/collector/consumer/pdatautil"
-	"go.opentelemetry.io/collector/internal/data"
 	otlptrace "go.opentelemetry.io/collector/internal/data/opentelemetry-proto-gen/trace/v1"
 	"go.opentelemetry.io/collector/internal/goldendataset"
 )
@@ -123,17 +121,17 @@ func (dp *PerfTestDataProvider) GenerateMetrics() (pdata.Metrics, bool) {
 	// Generate 7 data points per metric.
 	const dataPointsPerMetric = 7
 
-	metricData := data.NewMetricData()
-	metricData.ResourceMetrics().Resize(1)
-	metricData.ResourceMetrics().At(0).InstrumentationLibraryMetrics().Resize(1)
+	md := pdata.NewMetrics()
+	md.ResourceMetrics().Resize(1)
+	md.ResourceMetrics().At(0).InstrumentationLibraryMetrics().Resize(1)
 	if dp.options.Attributes != nil {
-		attrs := metricData.ResourceMetrics().At(0).Resource().Attributes()
+		attrs := md.ResourceMetrics().At(0).Resource().Attributes()
 		attrs.InitEmptyWithCapacity(len(dp.options.Attributes))
 		for k, v := range dp.options.Attributes {
 			attrs.UpsertString(k, v)
 		}
 	}
-	metrics := metricData.ResourceMetrics().At(0).InstrumentationLibraryMetrics().At(0).Metrics()
+	metrics := md.ResourceMetrics().At(0).InstrumentationLibraryMetrics().At(0).Metrics()
 	metrics.Resize(dp.options.ItemsPerBatch)
 
 	for i := 0; i < dp.options.ItemsPerBatch; i++ {
@@ -160,7 +158,7 @@ func (dp *PerfTestDataProvider) GenerateMetrics() (pdata.Metrics, bool) {
 			})
 		}
 	}
-	return pdatautil.MetricsFromInternalMetrics(metricData), false
+	return md, false
 }
 
 func (dp *PerfTestDataProvider) GetGeneratedSpan([]byte, []byte) *otlptrace.Span {
@@ -219,16 +217,21 @@ type GoldenDataProvider struct {
 	resourceSpans      []*otlptrace.ResourceSpans
 	spansIndex         int
 	spansMap           map[string]*otlptrace.Span
+
+	metricPairsFile  string
+	metricsGenerated []pdata.Metrics
+	metricsIndex     int
 }
 
 // NewGoldenDataProvider creates a new instance of GoldenDataProvider which generates test data based
 // on the pairwise combinations specified in the tracePairsFile and spanPairsFile input variables.
 // The supplied randomSeed is used to initialize the random number generator used in generating tracing IDs.
-func NewGoldenDataProvider(tracePairsFile string, spanPairsFile string, randomSeed int64) *GoldenDataProvider {
+func NewGoldenDataProvider(tracePairsFile string, spanPairsFile string, metricPairsFile string, randomSeed int64) *GoldenDataProvider {
 	return &GoldenDataProvider{
-		tracePairsFile: tracePairsFile,
-		spanPairsFile:  spanPairsFile,
-		random:         io.Reader(rand.New(rand.NewSource(randomSeed))),
+		tracePairsFile:  tracePairsFile,
+		spanPairsFile:   spanPairsFile,
+		metricPairsFile: metricPairsFile,
+		random:          io.Reader(rand.New(rand.NewSource(randomSeed))),
 	}
 }
 
@@ -262,11 +265,26 @@ func (dp *GoldenDataProvider) GenerateTraces() (pdata.Traces, bool) {
 }
 
 func (dp *GoldenDataProvider) GenerateMetrics() (pdata.Metrics, bool) {
-	return pdatautil.MetricsFromInternalMetrics(data.MetricData{}), true
+	if dp.metricsGenerated == nil {
+		var err error
+		dp.metricsGenerated, err = goldendataset.GenerateMetricDatas(dp.metricPairsFile)
+		if err != nil {
+			log.Printf("cannot generate metrics: %s", err)
+		}
+	}
+	numMetricsGenerated := len(dp.metricsGenerated)
+	if dp.metricsIndex == numMetricsGenerated {
+		return pdata.Metrics{}, true
+	}
+	pdm := dp.metricsGenerated[dp.metricsIndex]
+	dp.metricsIndex++
+	_, dpCount := pdm.MetricAndDataPointCount()
+	dp.dataItemsGenerated.Add(uint64(dpCount))
+	return pdm, false
 }
 
 func (dp *GoldenDataProvider) GenerateLogs() (pdata.Logs, bool) {
-	return pdata.Logs{}, true
+	return pdata.NewLogs(), true
 }
 
 func (dp *GoldenDataProvider) GetGeneratedSpan(traceID []byte, spanID []byte) *otlptrace.Span {
