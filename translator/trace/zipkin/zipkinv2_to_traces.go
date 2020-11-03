@@ -15,11 +15,9 @@
 package zipkin
 
 import (
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"math"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -27,6 +25,7 @@ import (
 	zipkinmodel "github.com/openzipkin/zipkin-go/model"
 
 	"go.opentelemetry.io/collector/consumer/pdata"
+	commonpb "go.opentelemetry.io/collector/internal/data/opentelemetry-proto-gen/common/v1"
 	otlptrace "go.opentelemetry.io/collector/internal/data/opentelemetry-proto-gen/trace/v1"
 	"go.opentelemetry.io/collector/translator/conventions"
 	tracetranslator "go.opentelemetry.io/collector/translator/trace"
@@ -47,30 +46,6 @@ func getNonSpanAttributes() map[string]struct{} {
 	attrs[conventions.OCAttributeProcessID] = struct{}{}
 	attrs[conventions.OCAttributeResourceType] = struct{}{}
 	return attrs
-}
-
-type AttrValDescript struct {
-	regex    *regexp.Regexp
-	attrType pdata.AttributeValueType
-}
-
-var attrValDescriptions = getAttrValDescripts()
-
-func getAttrValDescripts() []*AttrValDescript {
-	descriptions := make([]*AttrValDescript, 0, 5)
-	descriptions = append(descriptions, constructAttrValDescript("^$", pdata.AttributeValueNULL))
-	descriptions = append(descriptions, constructAttrValDescript(`^-?\d+$`, pdata.AttributeValueINT))
-	descriptions = append(descriptions, constructAttrValDescript(`^-?\d+\.\d+$`, pdata.AttributeValueDOUBLE))
-	descriptions = append(descriptions, constructAttrValDescript(`^(true|false)$`, pdata.AttributeValueBOOL))
-	return descriptions
-}
-
-func constructAttrValDescript(regex string, attrType pdata.AttributeValueType) *AttrValDescript {
-	regexc, _ := regexp.Compile(regex)
-	return &AttrValDescript{
-		regex:    regexc,
-		attrType: attrType,
-	}
 }
 
 // Custom Sort on
@@ -94,7 +69,7 @@ func (b byOTLPTypes) Swap(i, j int) {
 }
 
 // V2SpansToInternalTraces translates Zipkin v2 spans into internal trace data.
-func V2SpansToInternalTraces(zipkinSpans []*zipkinmodel.SpanModel) (pdata.Traces, error) {
+func V2SpansToInternalTraces(zipkinSpans []*zipkinmodel.SpanModel, parseStringTags bool) (pdata.Traces, error) {
 	traceData := pdata.NewTraces()
 	if len(zipkinSpans) == 0 {
 		return traceData, nil
@@ -139,7 +114,7 @@ func V2SpansToInternalTraces(zipkinSpans []*zipkinmodel.SpanModel) (pdata.Traces
 			curSpans = curILSpans.Spans()
 		}
 		curSpans.Resize(spanCount + 1)
-		err := zSpanToInternal(zspan, tags, curSpans.At(spanCount))
+		err := zSpanToInternal(zspan, tags, curSpans.At(spanCount), parseStringTags)
 		if err != nil {
 			return traceData, err
 		}
@@ -149,18 +124,18 @@ func V2SpansToInternalTraces(zipkinSpans []*zipkinmodel.SpanModel) (pdata.Traces
 	return traceData, nil
 }
 
-func zSpanToInternal(zspan *zipkinmodel.SpanModel, tags map[string]string, dest pdata.Span) error {
+func zSpanToInternal(zspan *zipkinmodel.SpanModel, tags map[string]string, dest pdata.Span, parseStringTags bool) error {
 	dest.InitEmpty()
 
-	dest.SetTraceID(tracetranslator.UInt64ToByteTraceID(zspan.TraceID.High, zspan.TraceID.Low))
-	dest.SetSpanID(tracetranslator.UInt64ToByteSpanID(uint64(zspan.ID)))
+	dest.SetTraceID(tracetranslator.UInt64ToTraceID(zspan.TraceID.High, zspan.TraceID.Low))
+	dest.SetSpanID(tracetranslator.UInt64ToSpanID(uint64(zspan.ID)))
 	if value, ok := tags[tracetranslator.TagW3CTraceState]; ok {
 		dest.SetTraceState(pdata.TraceState(value))
 		delete(tags, tracetranslator.TagW3CTraceState)
 	}
 	parentID := zspan.ParentID
 	if parentID != nil && *parentID != zspan.ID {
-		dest.SetParentSpanID(tracetranslator.UInt64ToByteSpanID(uint64(*parentID)))
+		dest.SetParentSpanID(tracetranslator.UInt64ToSpanID(uint64(*parentID)))
 	}
 
 	dest.SetName(zspan.Name)
@@ -176,7 +151,7 @@ func zSpanToInternal(zspan *zipkinmodel.SpanModel, tags map[string]string, dest 
 
 	attrs := dest.Attributes()
 	attrs.InitEmptyWithCapacity(len(tags))
-	if err := zTagsToInternalAttrs(zspan, tags, attrs); err != nil {
+	if err := zTagsToInternalAttrs(zspan, tags, attrs, parseStringTags); err != nil {
 		return err
 	}
 
@@ -236,16 +211,23 @@ func zTagsToSpanLinks(tags map[string]string, dest pdata.SpanLinkSlice) error {
 		link := dest.At(index)
 		index++
 		link.InitEmpty()
-		rawTrace, errTrace := hex.DecodeString(parts[0])
+
+		// Convert trace id.
+		rawTrace := commonpb.TraceID{}
+		errTrace := rawTrace.UnmarshalJSON([]byte(parts[0]))
 		if errTrace != nil {
 			return errTrace
 		}
-		link.SetTraceID(pdata.NewTraceID(rawTrace))
-		rawSpan, errSpan := hex.DecodeString(parts[1])
+		link.SetTraceID(pdata.TraceID(rawTrace))
+
+		// Convert span id.
+		rawSpan := commonpb.SpanID{}
+		errSpan := rawSpan.UnmarshalJSON([]byte(parts[1]))
 		if errSpan != nil {
 			return errSpan
 		}
-		link.SetSpanID(pdata.NewSpanID(rawSpan))
+		link.SetSpanID(pdata.SpanID(rawSpan))
+
 		link.SetTraceState(pdata.TraceState(parts[2]))
 
 		var jsonStr string
@@ -327,8 +309,8 @@ func jsonMapToAttributeMap(attrs map[string]interface{}, dest pdata.AttributeMap
 	return nil
 }
 
-func zTagsToInternalAttrs(zspan *zipkinmodel.SpanModel, tags map[string]string, dest pdata.AttributeMap) error {
-	parseErr := tagsToAttributeMap(tags, dest)
+func zTagsToInternalAttrs(zspan *zipkinmodel.SpanModel, tags map[string]string, dest pdata.AttributeMap, parseStringTags bool) error {
+	parseErr := tagsToAttributeMap(tags, dest, parseStringTags)
 	if zspan.LocalEndpoint != nil {
 		if zspan.LocalEndpoint.IPv4 != nil {
 			dest.InsertString(conventions.AttributeNetHostIP, zspan.LocalEndpoint.IPv4.String())
@@ -357,36 +339,32 @@ func zTagsToInternalAttrs(zspan *zipkinmodel.SpanModel, tags map[string]string, 
 	return parseErr
 }
 
-func tagsToAttributeMap(tags map[string]string, dest pdata.AttributeMap) error {
+func tagsToAttributeMap(tags map[string]string, dest pdata.AttributeMap, parseStringTags bool) error {
 	var parseErr error
 	for key, val := range tags {
 		if _, ok := nonSpanAttributes[key]; ok {
 			continue
 		}
-		switch determineValueType(val) {
-		case pdata.AttributeValueINT:
-			iVal, _ := strconv.ParseInt(val, 10, 64)
-			dest.UpsertInt(key, iVal)
-		case pdata.AttributeValueDOUBLE:
-			fVal, _ := strconv.ParseFloat(val, 64)
-			dest.UpsertDouble(key, fVal)
-		case pdata.AttributeValueBOOL:
-			bVal, _ := strconv.ParseBool(val)
-			dest.UpsertBool(key, bVal)
-		default:
+
+		if parseStringTags {
+			switch tracetranslator.DetermineValueType(val, false) {
+			case pdata.AttributeValueINT:
+				iValue, _ := strconv.ParseInt(val, 10, 64)
+				dest.UpsertInt(key, iValue)
+			case pdata.AttributeValueDOUBLE:
+				fValue, _ := strconv.ParseFloat(val, 64)
+				dest.UpsertDouble(key, fValue)
+			case pdata.AttributeValueBOOL:
+				bValue, _ := strconv.ParseBool(val)
+				dest.UpsertBool(key, bValue)
+			default:
+				dest.UpsertString(key, val)
+			}
+		} else {
 			dest.UpsertString(key, val)
 		}
 	}
 	return parseErr
-}
-
-func determineValueType(value string) pdata.AttributeValueType {
-	for _, desc := range attrValDescriptions {
-		if desc.regex.MatchString(value) {
-			return desc.attrType
-		}
-	}
-	return pdata.AttributeValueSTRING
 }
 
 func populateResourceFromZipkinSpan(tags map[string]string, localServiceName string, resource pdata.Resource) {

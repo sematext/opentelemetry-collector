@@ -2,11 +2,124 @@
 
 ## Unreleased
 
+## 🚀 New components 🚀
+
+- `otlphttp` exporter which implements OTLP over HTTP protocol.
+
+## 🛑 Breaking changes 🛑
+
+- Rename consumer.TraceConsumer to consumer.TracesConsumer #1974
+- Rename component.TraceReceiver to component.TracesReceiver #1975
+- Rename component.TraceProcessor to component.TracesProcessor #1976
+- Rename component.TraceExporter to component.TracesExporter #1975
+
+## v0.13.0 Beta
+
+## 🛑 Breaking changes 🛑
+
+- Host metric `system.disk.time` renamed to `system.disk.operation_time` (#1887)
+- Use consumer for sender interface, remove unnecessary receiver address from Runner (#1941)
+- Enable sending queue by default in all exporters configured to use it (#1924)
+- Removed `groupbytraceprocessor` (#1891)
+- Remove ability to configure collection interval per scraper (#1947)
+
+## 💡 Enhancements 💡
+
+- Host Metrics receiver now reports both `system.disk.io_time` and `system.disk.operation_time` (#1887)
+- Match spans against the instrumentation library and resource attributes (#928)
+- Add `receiverhelper` for creating flexible "scraper" metrics receiver (#1886, #1890, #1945, #1946)
+- Migrate `tailsampling` processor to new OTLP-based internal data model and add Composite Sampler (#1894)
+- Metadata Generator: Change Metrics fields to implement an interface with new methods (#1912)
+- Add unmarshalling for `pdata.Traces` (#1948)
+- Add debug-level message on error for `jaeger` exporter (#1964)
+
+## 🧰 Bug fixes 🧰
+
+- Fix bug where the service does not correctly start/stop the log exporters (#1943)
+- Fix Queued Retry Unusable without Batch Processor (#1813) - (#1930)
+- `prometheus` receiver: Log error message when `process_start_time_seconds` gauge is missing (#1921)
+- Fix trace jaeger conversion to internal traces zero time bug (#1957)
+- Fix panic in otlp traces to zipkin (#1963)
+- Fix OTLP/HTTP receiver's path to be /v1/traces (#1979)
+
+## v0.12.0 Beta
+
+## 🚀 New components 🚀
+
+- `configauth` package with the auth settings that can be used by receivers (#1807, #1808, #1809, #1810)
+- `perfcounters` package that uses perflib for host metrics receiver (#1835, #1836, #1868, #1869, #1870)
+
+## 💡 Enhancements 💡
+
+- Remove `queued_retry` and enable `otlp` metrics receiver in default config (#1823, #1838)
+- Add `limit_percentage` and `spike_limit_percentage` options to `memorylimiter` processor (#1622)
+- `hostmetrics` receiver:
+  - Collect additional labels from partitions in the filesystems scraper (#1858)
+  - Add filters for mount point and filesystem type (#1866)
+- Add cloud.provider semantic conventions (#1865)
+- `attribute` processor: Add log support (#1783)
+- Deprecate OpenCensus-based internal data structures (#1843)
+- Introduce SpanID data type, not yet used in Protobuf messages ($1854, #1855)
+- Enable `otlp` trace by default in the released docker image (#1883)
+- `tailsampling` processor: Combine batches of spans into a single batch (#1864)
+- `filter` processor: Update to use pdata (#1885)
+- Allow MSI upgrades (#1914)
+
+## 🧰 Bug fixes 🧰
+
+- `prometheus` receiver: Print a more informative message about 'up' metric value (#1826)
+- Use custom data type and custom JSON serialization for traceid (#1840)
+- Skip creation of redundant nil resource in translation from OC if there are no combined metrics (#1803)
+- `tailsampling` processor: Only send to next consumer once (#1735)
+- Report Windows pagefile usage in bytes (#1837)
+- Fix issue where Prometheus SD config cannot be parsed (#1877)
+
+## v0.11.0 Beta
+
+## 🛑 Breaking changes 🛑
+
+- Rename service.Start() to Run() since it's a blocking call
+- Fix slice Append to accept by value the element in pdata
+- Change CreateTraceProcessor and CreateMetricsProcessor to use the same parameter order as receivers/logs processor and exporters.
+- Prevent accidental use of LogsToOtlp and LogsFromOtlp and the OTLP data structs (#1703)
+- Remove SetType from configmodels, ensure all registered factories set the type in config (#1798)
+- Move process telemetry to service/internal (#1794)
+
+## 💡 Enhancements 💡
+
+- Add map and array attribute value type support (#1656)
+- Add authentication support to kafka (#1632)
+- Implement InstrumentationLibrary translation to jaeger (#1645)
+- Add public functions to export pdata to ExportXServicesRequest Protobuf bytes (#1741)
+- Expose telemetry level in the configtelemetry (#1796)
+- Add configauth package (#1807)
+- Add config to docker image (#1792)
+
+## 🧰 Bug fixes 🧰
+
+- Use zap int argument for int values instead of conversion (#1779)
+- Add support for gzip encoded payload in OTLP/HTTP receiver (#1581)
+- Return proto status for OTLP receiver when failed (#1788)
+
+## v0.10.0 Beta
+
 ## 🛑 Breaking changes 🛑
 
 - **Update OTLP to v0.5.0, incompatible metrics protocol.**
 - Remove support for propagating summary metrics in OtelCollector.
   - This is a temporary change, and will affect mostly OpenCensus users who use metrics.
+
+## 💡 Enhancements 💡
+- Support zipkin proto in `kafka` receiver (#1646)
+- Prometheus Remote Write Exporter supporting Cortex (#1577, #1643)
+- Add deployment environment semantic convention (#1722)
+- Add logs support to `batch` and `resource` processors (#1723, #1729)
+
+## 🧰 Bug fixes 🧰
+- Identify config error when expected map is other value type (#1641)
+- Fix Kafka receiver closing ready channel multiple times (#1696)
+- Fix a panic issue while processing Zipkin spans with an empty service name (#1742)
+- Zipkin Receiver: Always set the endtime (#1750)
 
 ## v0.9.0 Beta
 
@@ -41,7 +154,6 @@
 - Fix multiple exporters panic (#1563)
 - Allow `attribute` processor for external use (#1574)
 - Do not duplicate filesystem metrics for devices with many mount points (#1617)
-- Fix a panic issue while processing Zipkin spans with an empty service name (#1742)
 
 ## v0.8.0 Beta
 

@@ -48,11 +48,9 @@ func TestDefaultComponents(t *testing.T) {
 		"queued_retry",
 		"batch",
 		"memory_limiter",
-		"tail_sampling",
 		"probabilistic_sampler",
 		"span",
 		"filter",
-		"groupbytrace",
 	}
 	expectedExporters := []configmodels.Type{
 		"opencensus",
@@ -63,6 +61,7 @@ func TestDefaultComponents(t *testing.T) {
 		"jaeger",
 		"file",
 		"otlp",
+		"otlphttp",
 		"kafka",
 	}
 
@@ -83,6 +82,7 @@ func TestDefaultComponents(t *testing.T) {
 		v, ok := recvs[k]
 		require.True(t, ok)
 		assert.Equal(t, k, v.Type())
+		assert.Equal(t, k, v.CreateDefaultConfig().Type())
 	}
 
 	procs := factories.Processors
@@ -91,6 +91,7 @@ func TestDefaultComponents(t *testing.T) {
 		v, ok := procs[k]
 		require.True(t, ok)
 		assert.Equal(t, k, v.Type())
+		assert.Equal(t, k, v.CreateDefaultConfig().Type())
 	}
 
 	exps := factories.Exporters
@@ -99,5 +100,6 @@ func TestDefaultComponents(t *testing.T) {
 		v, ok := exps[k]
 		require.True(t, ok)
 		assert.Equal(t, k, v.Type())
+		assert.Equal(t, k, v.CreateDefaultConfig().Type())
 	}
 }

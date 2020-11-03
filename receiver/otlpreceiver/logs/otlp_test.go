@@ -16,7 +16,6 @@ package logs
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
 	"net"
 	"testing"
@@ -26,9 +25,11 @@ import (
 	"google.golang.org/grpc"
 
 	"go.opentelemetry.io/collector/consumer"
+	"go.opentelemetry.io/collector/consumer/consumertest"
 	"go.opentelemetry.io/collector/consumer/pdata"
-	"go.opentelemetry.io/collector/exporter/exportertest"
+	"go.opentelemetry.io/collector/internal"
 	collectorlog "go.opentelemetry.io/collector/internal/data/opentelemetry-proto-gen/collector/logs/v1"
+	v1 "go.opentelemetry.io/collector/internal/data/opentelemetry-proto-gen/common/v1"
 	otlplog "go.opentelemetry.io/collector/internal/data/opentelemetry-proto-gen/logs/v1"
 	"go.opentelemetry.io/collector/obsreport"
 	"go.opentelemetry.io/collector/testutil"
@@ -39,7 +40,7 @@ var _ collectorlog.LogsServiceServer = (*Receiver)(nil)
 func TestExport(t *testing.T) {
 	// given
 
-	logSink := new(exportertest.SinkLogsExporter)
+	logSink := new(consumertest.LogsSink)
 
 	port, doneFn := otlpReceiverOnGRPCServer(t, logSink)
 	defer doneFn()
@@ -51,21 +52,16 @@ func TestExport(t *testing.T) {
 	// when
 
 	unixnanos := uint64(12578940000000012345)
-
-	traceID, err := base64.StdEncoding.DecodeString("SEhaOVO7YSQ=")
-	assert.NoError(t, err)
-
-	spanID, err := base64.StdEncoding.DecodeString("QuHicGYRg4U=")
-	assert.NoError(t, err)
-
+	traceID := [16]byte{1, 2, 3, 4, 5, 6, 7, 8, 8, 7, 6, 5, 4, 3, 2, 1}
+	spanID := [8]byte{8, 7, 6, 5, 4, 3, 2, 1}
 	resourceLogs := []*otlplog.ResourceLogs{
 		{
 			InstrumentationLibraryLogs: []*otlplog.InstrumentationLibraryLogs{
 				{
 					Logs: []*otlplog.LogRecord{
 						{
-							TraceId:      traceID,
-							SpanId:       spanID,
+							TraceId:      v1.NewTraceID(traceID),
+							SpanId:       v1.NewSpanID(spanID),
 							Name:         "operationB",
 							TimeUnixNano: unixnanos,
 						},
@@ -77,7 +73,7 @@ func TestExport(t *testing.T) {
 
 	// Keep log data to compare the test result against it
 	// Clone needed because OTLP proto XXX_ fields are altered in the GRPC downstream
-	traceData := pdata.LogsFromOtlp(resourceLogs).Clone()
+	traceData := pdata.LogsFromInternalRep(internal.LogsFromOtlp(resourceLogs)).Clone()
 
 	req := &collectorlog.ExportLogsServiceRequest{
 		ResourceLogs: resourceLogs,
@@ -95,7 +91,7 @@ func TestExport(t *testing.T) {
 }
 
 func TestExport_EmptyRequest(t *testing.T) {
-	logSink := new(exportertest.SinkLogsExporter)
+	logSink := new(consumertest.LogsSink)
 
 	port, doneFn := otlpReceiverOnGRPCServer(t, logSink)
 	defer doneFn()
@@ -110,8 +106,8 @@ func TestExport_EmptyRequest(t *testing.T) {
 }
 
 func TestExport_ErrorConsumer(t *testing.T) {
-	logSink := new(exportertest.SinkLogsExporter)
-	logSink.SetConsumeLogError(fmt.Errorf("error"))
+	logSink := new(consumertest.LogsSink)
+	logSink.SetConsumeError(fmt.Errorf("error"))
 
 	port, doneFn := otlpReceiverOnGRPCServer(t, logSink)
 	defer doneFn()

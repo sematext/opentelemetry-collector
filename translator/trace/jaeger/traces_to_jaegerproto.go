@@ -79,7 +79,6 @@ func resourceSpansToJaegerProto(rs pdata.ResourceSpans) (*model.Batch, error) {
 			continue
 		}
 
-		// TODO: Handle instrumentation library name and version.
 		spans := ils.Spans()
 		for j := 0; j < spans.Len(); j++ {
 			span := spans.At(j)
@@ -87,7 +86,7 @@ func resourceSpansToJaegerProto(rs pdata.ResourceSpans) (*model.Batch, error) {
 				continue
 			}
 
-			jSpan, err := spanToJaegerProto(span)
+			jSpan, err := spanToJaegerProto(span, ils.InstrumentationLibrary())
 			if err != nil {
 				return nil, err
 			}
@@ -171,11 +170,14 @@ func attributeToJaegerProtoTag(key string, attr pdata.AttributeValue) model.KeyV
 	case pdata.AttributeValueDOUBLE:
 		tag.VType = model.ValueType_FLOAT64
 		tag.VFloat64 = attr.DoubleVal()
+	case pdata.AttributeValueMAP, pdata.AttributeValueARRAY:
+		tag.VType = model.ValueType_STRING
+		tag.VStr = tracetranslator.AttributeValueToString(attr, false)
 	}
 	return tag
 }
 
-func spanToJaegerProto(span pdata.Span) (*model.Span, error) {
+func spanToJaegerProto(span pdata.Span, libraryTags pdata.InstrumentationLibrary) (*model.Span, error) {
 	if span.IsNil() {
 		return nil, nil
 	}
@@ -204,16 +206,18 @@ func spanToJaegerProto(span pdata.Span) (*model.Span, error) {
 		References:    jReferences,
 		StartTime:     startTime,
 		Duration:      pdata.UnixNanoToTime(span.EndTime()).Sub(startTime),
-		Tags:          getJaegerProtoSpanTags(span),
+		Tags:          getJaegerProtoSpanTags(span, libraryTags),
 		Logs:          spanEventsToJaegerProtoLogs(span.Events()),
 	}, nil
 }
 
-func getJaegerProtoSpanTags(span pdata.Span) []model.KeyValue {
+func getJaegerProtoSpanTags(span pdata.Span, instrumentationLibrary pdata.InstrumentationLibrary) []model.KeyValue {
 	var spanKindTag, statusCodeTag, errorTag, statusMsgTag model.KeyValue
 	var spanKindTagFound, statusCodeTagFound, errorTagFound, statusMsgTagFound bool
 
-	tagsCount := span.Attributes().Len()
+	libraryTags, libraryTagsFound := getTagsFromInstrumentationLibrary(instrumentationLibrary)
+
+	tagsCount := span.Attributes().Len() + len(libraryTags)
 
 	spanKindTag, spanKindTagFound = getTagFromSpanKind(span.Kind())
 	if spanKindTagFound {
@@ -247,6 +251,9 @@ func getJaegerProtoSpanTags(span pdata.Span) []model.KeyValue {
 	}
 
 	tags := make([]model.KeyValue, 0, tagsCount)
+	if libraryTagsFound {
+		tags = append(tags, libraryTags...)
+	}
 	tags = appendTagsFromAttributes(tags, span.Attributes())
 	if spanKindTagFound {
 		tags = append(tags, spanKindTag)
@@ -267,10 +274,7 @@ func getJaegerProtoSpanTags(span pdata.Span) []model.KeyValue {
 }
 
 func traceIDToJaegerProto(traceID pdata.TraceID) (model.TraceID, error) {
-	traceIDHigh, traceIDLow, err := tracetranslator.BytesToUInt64TraceID(traceID)
-	if err != nil {
-		return model.TraceID{}, err
-	}
+	traceIDHigh, traceIDLow := tracetranslator.TraceIDToUInt64Pair(traceID)
 	if traceIDLow == 0 && traceIDHigh == 0 {
 		return model.TraceID{}, errZeroTraceID
 	}
@@ -281,10 +285,7 @@ func traceIDToJaegerProto(traceID pdata.TraceID) (model.TraceID, error) {
 }
 
 func spanIDToJaegerProto(spanID pdata.SpanID) (model.SpanID, error) {
-	uSpanID, err := tracetranslator.BytesToUInt64SpanID(spanID)
-	if err != nil {
-		return model.SpanID(0), err
-	}
+	uSpanID := tracetranslator.BytesToUInt64SpanID(spanID.Bytes())
 	if uSpanID == 0 {
 		return model.SpanID(0), errZeroSpanID
 	}
@@ -297,7 +298,7 @@ func makeJaegerProtoReferences(
 	parentSpanID pdata.SpanID,
 	traceID model.TraceID,
 ) ([]model.SpanRef, error) {
-	parentSpanIDSet := len(parentSpanID.Bytes()) != 0
+	parentSpanIDSet := parentSpanID.IsValid()
 	if !parentSpanIDSet && links.Len() == 0 {
 		return nil, nil
 	}
@@ -451,4 +452,29 @@ func getTagsFromTraceState(traceState pdata.TraceState) ([]model.KeyValue, bool)
 		keyValues = append(keyValues, kv)
 	}
 	return keyValues, exists
+}
+
+func getTagsFromInstrumentationLibrary(il pdata.InstrumentationLibrary) ([]model.KeyValue, bool) {
+	keyValues := make([]model.KeyValue, 0)
+	if il.IsNil() {
+		return keyValues, false
+	}
+	if ilName := il.Name(); ilName != "" {
+		kv := model.KeyValue{
+			Key:   tracetranslator.TagInstrumentationName,
+			VStr:  ilName,
+			VType: model.ValueType_STRING,
+		}
+		keyValues = append(keyValues, kv)
+	}
+	if ilVersion := il.Version(); ilVersion != "" {
+		kv := model.KeyValue{
+			Key:   tracetranslator.TagInstrumentationVersion,
+			VStr:  ilVersion,
+			VType: model.ValueType_STRING,
+		}
+		keyValues = append(keyValues, kv)
+	}
+
+	return keyValues, true
 }

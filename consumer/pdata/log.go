@@ -15,8 +15,8 @@
 package pdata
 
 import (
-	"github.com/gogo/protobuf/proto"
-
+	"go.opentelemetry.io/collector/internal"
+	otlpcollectorlog "go.opentelemetry.io/collector/internal/data/opentelemetry-proto-gen/collector/logs/v1"
 	otlplogs "go.opentelemetry.io/collector/internal/data/opentelemetry-proto-gen/logs/v1"
 )
 
@@ -32,31 +32,53 @@ type Logs struct {
 	orig *[]*otlplogs.ResourceLogs
 }
 
-// LogsFromOtlp creates the internal Logs representation from the ProtoBuf.
-func LogsFromOtlp(orig []*otlplogs.ResourceLogs) Logs {
-	return Logs{&orig}
-}
-
-// LogsToOtlp converts the internal Logs to the ProtoBuf.
-func LogsToOtlp(ld Logs) []*otlplogs.ResourceLogs {
-	return *ld.orig
-}
-
 // NewLogs creates a new Logs.
 func NewLogs() Logs {
 	orig := []*otlplogs.ResourceLogs(nil)
 	return Logs{&orig}
 }
 
+// LogsFromInternalRep creates the internal Logs representation from the ProtoBuf. Should
+// not be used outside this module. This is intended to be used only by OTLP exporter and
+// File exporter, which legitimately need to work with OTLP Protobuf structs.
+func LogsFromInternalRep(logs internal.OtlpLogsWrapper) Logs {
+	return Logs{logs.Orig}
+}
+
+// InternalRep returns internal representation of the logs. Should not be used outside
+// this module. This is intended to be used only by OTLP exporter and File exporter,
+// which legitimately need to work with OTLP Protobuf structs.
+func (ld Logs) InternalRep() internal.OtlpLogsWrapper {
+	return internal.OtlpLogsWrapper{Orig: ld.orig}
+}
+
+// ToOtlpProtoBytes returns the internal Logs to OTLP Collector ExportTraceServiceRequest
+// ProtoBuf bytes. This is intended to export OTLP Protobuf bytes for OTLP/HTTP transports.
+func (ld Logs) ToOtlpProtoBytes() ([]byte, error) {
+	logs := otlpcollectorlog.ExportLogsServiceRequest{
+		ResourceLogs: *ld.orig,
+	}
+	return logs.Marshal()
+}
+
+// FromOtlpProtoBytes converts OTLP Collector ExportLogsServiceRequest
+// ProtoBuf bytes to the internal Logs. Overrides current data.
+// Calling this function on zero-initialized structure causes panic.
+// Use it with NewLogs or on existing initialized Logs.
+func (ld Logs) FromOtlpProtoBytes(data []byte) error {
+	logs := otlpcollectorlog.ExportLogsServiceRequest{}
+	if err := logs.Unmarshal(data); err != nil {
+		return err
+	}
+	*ld.orig = logs.ResourceLogs
+	return nil
+}
+
 // Clone returns a copy of Logs.
 func (ld Logs) Clone() Logs {
-	otlp := LogsToOtlp(ld)
-	resourceSpansClones := make([]*otlplogs.ResourceLogs, 0, len(otlp))
-	for _, resourceSpans := range otlp {
-		resourceSpansClones = append(resourceSpansClones,
-			proto.Clone(resourceSpans).(*otlplogs.ResourceLogs))
-	}
-	return LogsFromOtlp(resourceSpansClones)
+	rls := NewResourceLogsSlice()
+	ld.ResourceLogs().CopyTo(rls)
+	return Logs(rls)
 }
 
 // LogRecordCount calculates the total number of log records.

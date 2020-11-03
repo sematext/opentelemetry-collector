@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/zap"
 
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/config/configcheck"
@@ -27,14 +28,14 @@ import (
 	"go.opentelemetry.io/collector/config/configtls"
 )
 
-//Tests whether or not the default Exporter factory can instantiate a properly interfaced Exporter with default conditions
+// Tests whether or not the default Exporter factory can instantiate a properly interfaced Exporter with default conditions
 func Test_createDefaultConfig(t *testing.T) {
 	cfg := createDefaultConfig()
 	assert.NotNil(t, cfg, "failed to create default config")
 	assert.NoError(t, configcheck.ValidateConfig(cfg))
 }
 
-//Tests whether or not a correct Metrics Exporter from the default Config parameters
+// Tests whether or not a correct Metrics Exporter from the default Config parameters
 func Test_createMetricsExporter(t *testing.T) {
 
 	invalidConfig := createDefaultConfig().(*Config)
@@ -57,22 +58,22 @@ func Test_createMetricsExporter(t *testing.T) {
 	}{
 		{"success_case",
 			createDefaultConfig(),
-			component.ExporterCreateParams{},
+			component.ExporterCreateParams{Logger: zap.NewNop()},
 			false,
 		},
 		{"fail_case",
 			nil,
-			component.ExporterCreateParams{},
+			component.ExporterCreateParams{Logger: zap.NewNop()},
 			true,
 		},
 		{"invalid_config_case",
 			invalidConfig,
-			component.ExporterCreateParams{},
+			component.ExporterCreateParams{Logger: zap.NewNop()},
 			true,
 		},
 		{"invalid_tls_config_case",
 			invalidTLSConfig,
-			component.ExporterCreateParams{},
+			component.ExporterCreateParams{Logger: zap.NewNop()},
 			true,
 		},
 	}

@@ -83,9 +83,11 @@ func protoBatchToResourceSpans(batch model.Batch, dest pdata.ResourceSpans) {
 		return
 	}
 
+	groupByLibrary := jSpansToInternal(jSpans)
 	ilss := dest.InstrumentationLibrarySpans()
-	ilss.Resize(1)
-	jSpansToInternal(jSpans, ilss.At(0).Spans())
+	for _, v := range groupByLibrary {
+		ilss.Append(v)
+	}
 }
 
 func jProcessToInternalResource(process *model.Process, dest pdata.Resource) {
@@ -138,36 +140,47 @@ func translateJaegerVersionAttr(attrs pdata.AttributeMap) {
 	}
 }
 
-func jSpansToInternal(spans []*model.Span, dest pdata.SpanSlice) {
-	if len(spans) == 0 {
-		return
-	}
+func jSpansToInternal(spans []*model.Span) map[instrumentationLibrary]pdata.InstrumentationLibrarySpans {
+	spansByLibrary := make(map[instrumentationLibrary]pdata.InstrumentationLibrarySpans)
 
-	dest.Resize(len(spans))
-	i := 0
 	for _, span := range spans {
 		if span == nil || reflect.DeepEqual(span, blankJaegerProtoSpan) {
 			continue
 		}
-		jSpanToInternal(span, dest.At(i))
-		i++
-	}
+		span, library := jSpanToInternal(span)
+		ils, found := spansByLibrary[library]
+		if !found {
+			ils = pdata.NewInstrumentationLibrarySpans()
+			ils.InitEmpty()
+			spansByLibrary[library] = ils
 
-	if i < len(spans) {
-		dest.Resize(i)
+			if library.name != "" {
+				ils.InstrumentationLibrary().InitEmpty()
+				ils.InstrumentationLibrary().SetName(library.name)
+				ils.InstrumentationLibrary().SetVersion(library.version)
+			}
+		}
+		ils.Spans().Append(span)
 	}
+	return spansByLibrary
 }
 
-func jSpanToInternal(span *model.Span, dest pdata.Span) {
-	dest.SetTraceID(tracetranslator.UInt64ToByteTraceID(span.TraceID.High, span.TraceID.Low))
-	dest.SetSpanID(tracetranslator.UInt64ToByteSpanID(uint64(span.SpanID)))
+type instrumentationLibrary struct {
+	name, version string
+}
+
+func jSpanToInternal(span *model.Span) (pdata.Span, instrumentationLibrary) {
+	dest := pdata.NewSpan()
+	dest.InitEmpty()
+	dest.SetTraceID(tracetranslator.UInt64ToTraceID(span.TraceID.High, span.TraceID.Low))
+	dest.SetSpanID(tracetranslator.UInt64ToSpanID(uint64(span.SpanID)))
 	dest.SetName(span.OperationName)
-	dest.SetStartTime(pdata.TimestampUnixNano(uint64(span.StartTime.UnixNano())))
-	dest.SetEndTime(pdata.TimestampUnixNano(uint64(span.StartTime.Add(span.Duration).UnixNano())))
+	dest.SetStartTime(pdata.TimeToUnixNano(span.StartTime))
+	dest.SetEndTime(pdata.TimeToUnixNano(span.StartTime.Add(span.Duration)))
 
 	parentSpanID := span.ParentSpanID()
 	if parentSpanID != model.SpanID(0) {
-		dest.SetParentSpanID(tracetranslator.UInt64ToByteSpanID(uint64(parentSpanID)))
+		dest.SetParentSpanID(tracetranslator.UInt64ToSpanID(uint64(parentSpanID)))
 	}
 
 	attrs := dest.Attributes()
@@ -178,6 +191,17 @@ func jSpanToInternal(span *model.Span, dest pdata.Span) {
 		dest.SetKind(jSpanKindToInternal(spanKindAttr.StringVal()))
 		attrs.Delete(tracetranslator.TagSpanKind)
 	}
+
+	il := instrumentationLibrary{}
+	if libraryName, ok := attrs.Get(tracetranslator.TagInstrumentationName); ok {
+		il.name = libraryName.StringVal()
+		attrs.Delete(tracetranslator.TagInstrumentationName)
+		if libraryVersion, ok := attrs.Get(tracetranslator.TagInstrumentationVersion); ok {
+			il.version = libraryVersion.StringVal()
+			attrs.Delete(tracetranslator.TagInstrumentationVersion)
+		}
+	}
+
 	dest.SetTraceState(getTraceStateFromAttrs(attrs))
 
 	// drop the attributes slice if all of them were replaced during translation
@@ -187,6 +211,8 @@ func jSpanToInternal(span *model.Span, dest pdata.Span) {
 
 	jLogsToSpanEvents(span.Logs, dest.Events())
 	jReferencesToSpanLinks(span.References, parentSpanID, dest.Links())
+
+	return dest, il
 }
 
 func jTagsToInternalAttributes(tags []model.KeyValue, dest pdata.AttributeMap) {
@@ -339,7 +365,7 @@ func jReferencesToSpanLinks(refs []model.SpanRef, excludeParentID model.SpanID, 
 			continue
 		}
 
-		link.SetTraceID(pdata.NewTraceID(tracetranslator.UInt64ToByteTraceID(ref.TraceID.High, ref.TraceID.Low)))
+		link.SetTraceID(tracetranslator.UInt64ToTraceID(ref.TraceID.High, ref.TraceID.Low))
 		link.SetSpanID(pdata.NewSpanID(tracetranslator.UInt64ToByteSpanID(uint64(ref.SpanID))))
 		i++
 	}

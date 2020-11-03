@@ -28,7 +28,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.opencensus.io/trace"
 
-	"go.opentelemetry.io/collector/exporter/exportertest"
+	"go.opentelemetry.io/collector/consumer/consumertest"
 	"go.opentelemetry.io/collector/obsreport/obsreporttest"
 )
 
@@ -44,7 +44,7 @@ func TestEnsureRecordedMetrics(t *testing.T) {
 	require.NoError(t, err)
 	defer doneFn()
 
-	port, doneReceiverFn := ocReceiverOnGRPCServer(t, exportertest.NewNopTraceExporter())
+	port, doneReceiverFn := ocReceiverOnGRPCServer(t, consumertest.NewTracesNop())
 	defer doneReceiverFn()
 
 	n := 20
@@ -66,7 +66,7 @@ func TestEnsureRecordedMetrics_zeroLengthSpansSender(t *testing.T) {
 	require.NoError(t, err)
 	defer doneFn()
 
-	port, doneFn := ocReceiverOnGRPCServer(t, exportertest.NewNopTraceExporter())
+	port, doneFn := ocReceiverOnGRPCServer(t, consumertest.NewTracesNop())
 	defer doneFn()
 
 	n := 20
@@ -96,7 +96,7 @@ func TestExportSpanLinkingMaintainsParentLink(t *testing.T) {
 	trace.RegisterExporter(ocSpansSaver)
 	defer trace.UnregisterExporter(ocSpansSaver)
 
-	port, doneFn := ocReceiverOnGRPCServer(t, exportertest.NewNopTraceExporter())
+	port, doneFn := ocReceiverOnGRPCServer(t, consumertest.NewTracesNop())
 	defer doneFn()
 
 	traceSvcClient, traceSvcDoneFn, err := makeTraceServiceClient(port)
@@ -178,12 +178,12 @@ func (tote *testOCTraceExporter) ExportSpan(sd *trace.SpanData) {
 // TODO: Determine how to do this deterministic.
 func flush(traceSvcDoneFn func()) {
 	// Give it enough time to process the streamed spans.
-	<-time.After(20 * time.Millisecond)
+	<-time.After(40 * time.Millisecond)
 
 	// End the gRPC service to complete the RPC trace so that we
 	// can examine the RPC trace as well.
 	traceSvcDoneFn()
 
 	// Give it some more time to complete the RPC trace and export.
-	<-time.After(20 * time.Millisecond)
+	<-time.After(40 * time.Millisecond)
 }

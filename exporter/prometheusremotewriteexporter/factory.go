@@ -36,7 +36,7 @@ func NewFactory() component.ExporterFactory {
 		exporterhelper.WithMetrics(createMetricsExporter))
 }
 
-func createMetricsExporter(_ context.Context, _ component.ExporterCreateParams,
+func createMetricsExporter(_ context.Context, params component.ExporterCreateParams,
 	cfg configmodels.Exporter) (component.MetricsExporter, error) {
 
 	prwCfg, ok := cfg.(*Config)
@@ -58,6 +58,7 @@ func createMetricsExporter(_ context.Context, _ component.ExporterCreateParams,
 
 	prwexp, err := exporterhelper.NewMetricsExporter(
 		cfg,
+		params.Logger,
 		prwe.PushMetrics,
 		exporterhelper.WithTimeout(prwCfg.TimeoutSettings),
 		exporterhelper.WithQueue(prwCfg.QueueSettings),
@@ -69,10 +70,6 @@ func createMetricsExporter(_ context.Context, _ component.ExporterCreateParams,
 }
 
 func createDefaultConfig() configmodels.Exporter {
-	// TODO: Enable the queued settings.
-	qs := exporterhelper.CreateDefaultQueueSettings()
-	qs.Enabled = false
-
 	return &Config{
 		ExporterSettings: configmodels.ExporterSettings{
 			TypeVal: typeStr,
@@ -82,7 +79,7 @@ func createDefaultConfig() configmodels.Exporter {
 
 		TimeoutSettings: exporterhelper.CreateDefaultTimeoutSettings(),
 		RetrySettings:   exporterhelper.CreateDefaultRetrySettings(),
-		QueueSettings:   qs,
+		QueueSettings:   exporterhelper.CreateDefaultQueueSettings(),
 		HTTPClientSettings: confighttp.HTTPClientSettings{
 			Endpoint: "http://some.url:9411/api/prom/push",
 			// We almost read 0 bytes, so no need to tune ReadBufferSize.

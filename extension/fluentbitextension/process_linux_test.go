@@ -56,7 +56,7 @@ func setup(t *testing.T, conf *Config) (*processManager, **process.Process, func
 	err = mockScriptFile.Chmod(0700)
 	require.Nil(t, err)
 
-	mockScriptFile.Close()
+	require.NoError(t, mockScriptFile.Close())
 
 	conf.ExecutablePath = mockScriptFile.Name()
 	pm := newProcessManager(conf, logger)
@@ -81,7 +81,6 @@ func setup(t *testing.T, conf *Config) (*processManager, **process.Process, func
 }
 
 func TestProcessManager(t *testing.T) {
-	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -94,7 +93,7 @@ func TestProcessManager(t *testing.T) {
 	pm.Start(ctx, nil)
 	defer pm.Shutdown(ctx)
 
-	require.Eventually(t, findSubproc, 5*time.Second, 100*time.Millisecond)
+	require.Eventually(t, findSubproc, 12*time.Second, 100*time.Millisecond)
 	require.NotNil(t, *mockProc)
 
 	cmdline, err := (*mockProc).Cmdline()
@@ -116,7 +115,6 @@ func TestProcessManager(t *testing.T) {
 }
 
 func TestProcessManagerArgs(t *testing.T) {
-	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -130,7 +128,7 @@ func TestProcessManagerArgs(t *testing.T) {
 	pm.Start(ctx, nil)
 	defer pm.Shutdown(ctx)
 
-	require.Eventually(t, findSubproc, 5*time.Second, 100*time.Millisecond)
+	require.Eventually(t, findSubproc, 12*time.Second, 100*time.Millisecond)
 	require.NotNil(t, *mockProc)
 
 	cmdline, err := (*mockProc).Cmdline()
@@ -142,7 +140,6 @@ func TestProcessManagerArgs(t *testing.T) {
 }
 
 func TestProcessManagerBadExec(t *testing.T) {
-	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -163,7 +160,6 @@ func TestProcessManagerBadExec(t *testing.T) {
 }
 
 func TestProcessManagerEmptyConfig(t *testing.T) {
-	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

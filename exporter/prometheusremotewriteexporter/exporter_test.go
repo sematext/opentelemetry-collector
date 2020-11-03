@@ -35,6 +35,7 @@ import (
 	"go.opentelemetry.io/collector/exporter/exporterhelper"
 	otlp "go.opentelemetry.io/collector/internal/data/opentelemetry-proto-gen/metrics/v1"
 	"go.opentelemetry.io/collector/internal/data/testdata"
+	"go.opentelemetry.io/collector/internal/version"
 )
 
 // Test_ NewPrwExporter checks that a new exporter instance with non-nil fields is initialized
@@ -124,26 +125,26 @@ func Test_Shutdown(t *testing.T) {
 	}
 }
 
-//Test whether or not the Server receives the correct TimeSeries.
-//Currently considering making this test an iterative for loop of multiple TimeSeries
-//Much akin to Test_PushMetrics
+// Test whether or not the Server receives the correct TimeSeries.
+// Currently considering making this test an iterative for loop of multiple TimeSeries much akin to Test_PushMetrics
 func Test_export(t *testing.T) {
-	//First we will instantiate a dummy TimeSeries instance to pass into both the export call and compare the http request
+	// First we will instantiate a dummy TimeSeries instance to pass into both the export call and compare the http request
 	labels := getPromLabels(label11, value11, label12, value12, label21, value21, label22, value22)
 	sample1 := getSample(floatVal1, msTime1)
 	sample2 := getSample(floatVal2, msTime2)
 	ts1 := getTimeSeries(labels, sample1, sample2)
 	handleFunc := func(w http.ResponseWriter, r *http.Request, code int) {
-		//The following is a handler function that reads the sent httpRequest, unmarshals, and checks if the WriteRequest
-		//preserves the TimeSeries data correctly
+		// The following is a handler function that reads the sent httpRequest, unmarshals, and checks if the WriteRequest
+		// preserves the TimeSeries data correctly
 		body, err := ioutil.ReadAll(r.Body)
 		if err != nil {
 			t.Fatal(err)
 		}
 		require.NotNil(t, body)
-		//Receives the http requests and unzip, unmarshals, and extracts TimeSeries
+		// Receives the http requests and unzip, unmarshals, and extracts TimeSeries
 		assert.Equal(t, "0.1.0", r.Header.Get("X-Prometheus-Remote-Write-Version"))
 		assert.Equal(t, "snappy", r.Header.Get("Content-Encoding"))
+		assert.Equal(t, "OpenTelemetry-Collector/"+version.Version, r.Header.Get("User-Agent"))
 		writeReq := &prompb.WriteRequest{}
 		unzipped := []byte{}
 
@@ -213,12 +214,12 @@ func Test_export(t *testing.T) {
 }
 
 func runExportPipeline(t *testing.T, ts *prompb.TimeSeries, endpoint *url.URL) error {
-	//First we will construct a TimeSeries array from the testutils package
+	// First we will construct a TimeSeries array from the testutils package
 	testmap := make(map[string]*prompb.TimeSeries)
 	testmap["test"] = ts
 
 	HTTPClient := http.DefaultClient
-	//after this, instantiate a CortexExporter with the current HTTP client and endpoint set to passed in endpoint
+	// after this, instantiate a CortexExporter with the current HTTP client and endpoint set to passed in endpoint
 	prwe, err := NewPrwExporter("test", endpoint.String(), HTTPClient)
 	if err != nil {
 		return err
@@ -438,6 +439,7 @@ func Test_PushMetrics(t *testing.T) {
 		dest, err := snappy.Decode(buf, body)
 		assert.Equal(t, "0.1.0", r.Header.Get("x-prometheus-remote-write-version"))
 		assert.Equal(t, "snappy", r.Header.Get("content-encoding"))
+		assert.Equal(t, "OpenTelemetry-Collector/"+version.Version, r.Header.Get("user-agent"))
 		assert.NotNil(t, r.Header.Get("tenant-id"))
 		require.NoError(t, err)
 		wr := &prompb.WriteRequest{}
@@ -562,6 +564,15 @@ func Test_PushMetrics(t *testing.T) {
 			http.StatusAccepted,
 			0,
 			false,
+		},
+		{
+			"5xx_case",
+			&unmatchedBoundBucketDoubleHistBatch,
+			checkFunc,
+			5,
+			http.StatusServiceUnavailable,
+			1,
+			true,
 		},
 		{
 			"nilDataPointDoubleGauge_case",

@@ -26,6 +26,7 @@ import (
 
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/component/componenterror"
+	"go.opentelemetry.io/collector/config/confighttp"
 	"go.opentelemetry.io/collector/consumer"
 	collectorlog "go.opentelemetry.io/collector/internal/data/opentelemetry-proto-gen/collector/logs/v1"
 	collectormetrics "go.opentelemetry.io/collector/internal/data/opentelemetry-proto-gen/collector/metrics/v1"
@@ -65,8 +66,18 @@ func newOtlpReceiver(cfg *Config) (*otlpReceiver, error) {
 		r.serverGRPC = grpc.NewServer(opts...)
 	}
 	if cfg.HTTP != nil {
+		// Use our custom JSON marshaler instead of default Protobuf JSON marshaler.
+		// This is needed because OTLP spec defines encoding for trace and span id
+		// and it is only possible to do using Gogoproto-compatible JSONPb marshaler.
+		jsonpb := &JSONPb{
+			EmitDefaults: true,
+			Indent:       "  ",
+			OrigName:     true,
+		}
 		r.gatewayMux = gatewayruntime.NewServeMux(
+			gatewayruntime.WithProtoErrorHandler(gatewayruntime.DefaultHTTPProtoErrorHandler),
 			gatewayruntime.WithMarshalerOption("application/x-protobuf", &xProtobufMarshaler{}),
+			gatewayruntime.WithMarshalerOption(gatewayruntime.MIMEWildcard, jsonpb),
 		)
 	}
 
@@ -95,7 +106,10 @@ func (r *otlpReceiver) Start(_ context.Context, host component.Host) error {
 			}()
 		}
 		if r.cfg.HTTP != nil {
-			r.serverHTTP = r.cfg.HTTP.ToServer(r.gatewayMux)
+			r.serverHTTP = r.cfg.HTTP.ToServer(
+				r.gatewayMux,
+				confighttp.WithErrorHandler(errorHandler),
+			)
 			var hln net.Listener
 			hln, err = r.cfg.HTTP.ToListener()
 			if err != nil {
@@ -128,7 +142,7 @@ func (r *otlpReceiver) Shutdown(context.Context) error {
 	return err
 }
 
-func (r *otlpReceiver) registerTraceConsumer(ctx context.Context, tc consumer.TraceConsumer) error {
+func (r *otlpReceiver) registerTraceConsumer(ctx context.Context, tc consumer.TracesConsumer) error {
 	if tc == nil {
 		return componenterror.ErrNilNextConsumer
 	}
@@ -137,7 +151,12 @@ func (r *otlpReceiver) registerTraceConsumer(ctx context.Context, tc consumer.Tr
 		collectortrace.RegisterTraceServiceServer(r.serverGRPC, r.traceReceiver)
 	}
 	if r.gatewayMux != nil {
-		return collectortrace.RegisterTraceServiceHandlerServer(ctx, r.gatewayMux, r.traceReceiver)
+		err := collectortrace.RegisterTraceServiceHandlerServer(ctx, r.gatewayMux, r.traceReceiver)
+		if err != nil {
+			return err
+		}
+		// Also register an alias handler. This fixes bug https://github.com/open-telemetry/opentelemetry-collector/issues/1968
+		return collectortrace.RegisterTraceServiceHandlerServerAlias(ctx, r.gatewayMux, r.traceReceiver)
 	}
 	return nil
 }

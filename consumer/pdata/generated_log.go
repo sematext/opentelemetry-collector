@@ -18,6 +18,7 @@
 package pdata
 
 import (
+	otlpcommon "go.opentelemetry.io/collector/internal/data/opentelemetry-proto-gen/common/v1"
 	otlplogs "go.opentelemetry.io/collector/internal/data/opentelemetry-proto-gen/logs/v1"
 )
 
@@ -140,8 +141,8 @@ func (es ResourceLogsSlice) Resize(newLen int) {
 // given ResourceLogs at that new position.  The original ResourceLogs
 // could still be referenced so do not reuse it after passing it to this
 // method.
-func (es ResourceLogsSlice) Append(e *ResourceLogs) {
-	(*es.orig) = append((*es.orig), *e.orig)
+func (es ResourceLogsSlice) Append(e ResourceLogs) {
+	*es.orig = append(*es.orig, *e.orig)
 }
 
 // ResourceLogs is a collection of logs from a Resource.
@@ -331,8 +332,8 @@ func (es InstrumentationLibraryLogsSlice) Resize(newLen int) {
 // given InstrumentationLibraryLogs at that new position.  The original InstrumentationLibraryLogs
 // could still be referenced so do not reuse it after passing it to this
 // method.
-func (es InstrumentationLibraryLogsSlice) Append(e *InstrumentationLibraryLogs) {
-	(*es.orig) = append((*es.orig), *e.orig)
+func (es InstrumentationLibraryLogsSlice) Append(e InstrumentationLibraryLogs) {
+	*es.orig = append(*es.orig, *e.orig)
 }
 
 // InstrumentationLibraryLogs is a collection of logs from a LibraryInstrumentation.
@@ -522,8 +523,8 @@ func (es LogSlice) Resize(newLen int) {
 // given LogRecord at that new position.  The original LogRecord
 // could still be referenced so do not reuse it after passing it to this
 // method.
-func (es LogSlice) Append(e *LogRecord) {
-	(*es.orig) = append((*es.orig), *e.orig)
+func (es LogSlice) Append(e LogRecord) {
+	*es.orig = append(*es.orig, *e.orig)
 }
 
 // LogRecord are experimental implementation of OpenTelemetry Log Data Model.
@@ -590,7 +591,7 @@ func (ms LogRecord) TraceID() TraceID {
 //
 // Important: This causes a runtime error if IsNil() returns "true".
 func (ms LogRecord) SetTraceID(v TraceID) {
-	(*ms.orig).TraceId = []byte(v)
+	(*ms.orig).TraceId = otlpcommon.TraceID(v)
 }
 
 // SpanID returns the spanid associated with this LogRecord.
@@ -604,7 +605,7 @@ func (ms LogRecord) SpanID() SpanID {
 //
 // Important: This causes a runtime error if IsNil() returns "true".
 func (ms LogRecord) SetSpanID(v SpanID) {
-	(*ms.orig).SpanId = []byte(v)
+	(*ms.orig).SpanId = otlpcommon.SpanID(v)
 }
 
 // Flags returns the flags associated with this LogRecord.

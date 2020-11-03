@@ -16,6 +16,7 @@ package zipkin
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"strconv"
@@ -78,11 +79,15 @@ func resourceSpansToZipkinSpans(rs pdata.ResourceSpans, estSpanCount int) ([]*zi
 		extractInstrumentationLibraryTags(ils.InstrumentationLibrary(), zTags)
 		spans := ils.Spans()
 		for j := 0; j < spans.Len(); j++ {
-			span, err := spanToZipkinSpan(spans.At(j), localServiceName, zTags)
+			span := spans.At(j)
+			if span.IsNil() {
+				continue
+			}
+			zSpan, err := spanToZipkinSpan(span, localServiceName, zTags)
 			if err != nil {
 				return zSpans, err
 			}
-			zSpans = append(zSpans, span)
+			zSpans = append(zSpans, zSpan)
 		}
 	}
 
@@ -111,31 +116,21 @@ func spanToZipkinSpan(
 
 	zs := &zipkinmodel.SpanModel{}
 
-	hi, lo, err := tracetranslator.BytesToUInt64TraceID(span.TraceID().Bytes())
-	if err != nil {
-		return nil, err
+	if !span.TraceID().IsValid() {
+		return zs, errors.New("TraceID is invalid")
 	}
-	zs.TraceID = zipkinmodel.TraceID{
-		High: hi,
-		Low:  lo,
+	zs.TraceID = convertTraceID(span.TraceID())
+	if !span.SpanID().IsValid() {
+		return zs, errors.New("SpanID is invalid")
 	}
-
-	idVal, err := tracetranslator.BytesToUInt64SpanID(span.SpanID().Bytes())
-	if err != nil {
-		return nil, err
-	}
-	zs.ID = zipkinmodel.ID(idVal)
+	zs.ID = convertSpanID(span.SpanID())
 
 	if len(span.TraceState()) > 0 {
 		tags[tracetranslator.TagW3CTraceState] = string(span.TraceState())
 	}
 
-	if len(span.ParentSpanID().Bytes()) > 0 {
-		idVal, err := tracetranslator.BytesToUInt64SpanID(span.ParentSpanID().Bytes())
-		if err != nil {
-			return nil, err
-		}
-		id := zipkinmodel.ID(idVal)
+	if span.ParentSpanID().IsValid() {
+		id := convertSpanID(span.ParentSpanID())
 		zs.ParentID = &id
 	}
 
@@ -205,8 +200,7 @@ func spanEventsToZipkinAnnotations(events pdata.SpanEventSlice, zs *zipkinmodel.
 					Value:     event.Name(),
 				}
 			} else {
-				rawMap := attributeMapToMap(event.Attributes())
-				jsonStr, err := json.Marshal(rawMap)
+				jsonStr, err := json.Marshal(tracetranslator.AttributeMapToMap(event.Attributes()))
 				if err != nil {
 					return err
 				}
@@ -227,52 +221,21 @@ func spanLinksToZipkinTags(links pdata.SpanLinkSlice, zTags map[string]string) e
 		link := links.At(i)
 		if !link.IsNil() {
 			key := fmt.Sprintf("otlp.link.%d", i)
-			rawMap := attributeMapToMap(link.Attributes())
-			jsonStr, err := json.Marshal(rawMap)
+			jsonStr, err := json.Marshal(tracetranslator.AttributeMapToMap(link.Attributes()))
 			if err != nil {
 				return err
 			}
-			zTags[key] = fmt.Sprintf(tracetranslator.SpanLinkDataFormat, link.TraceID().String(),
-				link.SpanID().String(), link.TraceState(), jsonStr, link.DroppedAttributesCount())
+			zTags[key] = fmt.Sprintf(tracetranslator.SpanLinkDataFormat, link.TraceID().HexString(),
+				link.SpanID().HexString(), link.TraceState(), jsonStr, link.DroppedAttributesCount())
 		}
 	}
 	return nil
 }
 
-func attributeMapToMap(attrMap pdata.AttributeMap) map[string]interface{} {
-	rawMap := make(map[string]interface{})
-	attrMap.ForEach(func(k string, v pdata.AttributeValue) {
-		switch v.Type() {
-		case pdata.AttributeValueSTRING:
-			rawMap[k] = v.StringVal()
-		case pdata.AttributeValueINT:
-			rawMap[k] = v.IntVal()
-		case pdata.AttributeValueDOUBLE:
-			rawMap[k] = v.DoubleVal()
-		case pdata.AttributeValueBOOL:
-			rawMap[k] = v.BoolVal()
-		case pdata.AttributeValueNULL:
-			rawMap[k] = nil
-		}
-	})
-	return rawMap
-}
-
 func attributeMapToStringMap(attrMap pdata.AttributeMap) map[string]string {
 	rawMap := make(map[string]string)
 	attrMap.ForEach(func(k string, v pdata.AttributeValue) {
-		switch v.Type() {
-		case pdata.AttributeValueSTRING:
-			rawMap[k] = v.StringVal()
-		case pdata.AttributeValueINT:
-			rawMap[k] = strconv.FormatInt(v.IntVal(), 10)
-		case pdata.AttributeValueDOUBLE:
-			rawMap[k] = strconv.FormatFloat(v.DoubleVal(), 'f', -1, 64)
-		case pdata.AttributeValueBOOL:
-			rawMap[k] = strconv.FormatBool(v.BoolVal())
-		case pdata.AttributeValueNULL:
-			rawMap[k] = ""
-		}
+		rawMap[k] = tracetranslator.AttributeValueToString(v, false)
 	})
 	return rawMap
 }
@@ -403,4 +366,13 @@ func isIPv6Address(ipStr string) bool {
 		}
 	}
 	return false
+}
+
+func convertTraceID(t pdata.TraceID) zipkinmodel.TraceID {
+	h, l := tracetranslator.TraceIDToUInt64Pair(t)
+	return zipkinmodel.TraceID{High: h, Low: l}
+}
+
+func convertSpanID(s pdata.SpanID) zipkinmodel.ID {
+	return zipkinmodel.ID(tracetranslator.BytesToUInt64SpanID(s.Bytes()))
 }

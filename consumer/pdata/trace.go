@@ -15,10 +15,7 @@
 package pdata
 
 import (
-	"encoding/hex"
-
-	"github.com/gogo/protobuf/proto"
-
+	otlpcollectortrace "go.opentelemetry.io/collector/internal/data/opentelemetry-proto-gen/collector/trace/v1"
 	otlptrace "go.opentelemetry.io/collector/internal/data/opentelemetry-proto-gen/trace/v1"
 )
 
@@ -31,6 +28,12 @@ type Traces struct {
 	orig *[]*otlptrace.ResourceSpans
 }
 
+// NewTraces creates a new Traces.
+func NewTraces() Traces {
+	orig := []*otlptrace.ResourceSpans(nil)
+	return Traces{&orig}
+}
+
 // TracesFromOtlp creates the internal Traces representation from the OTLP.
 func TracesFromOtlp(orig []*otlptrace.ResourceSpans) Traces {
 	return Traces{&orig}
@@ -41,21 +44,33 @@ func TracesToOtlp(td Traces) []*otlptrace.ResourceSpans {
 	return *td.orig
 }
 
-// NewTraces creates a new Traces.
-func NewTraces() Traces {
-	orig := []*otlptrace.ResourceSpans(nil)
-	return Traces{&orig}
+// ToOtlpProtoBytes converts the internal Traces to OTLP Collector
+// ExportTraceServiceRequest ProtoBuf bytes.
+func (td Traces) ToOtlpProtoBytes() ([]byte, error) {
+	traces := otlpcollectortrace.ExportTraceServiceRequest{
+		ResourceSpans: *td.orig,
+	}
+	return traces.Marshal()
+}
+
+// FromOtlpProtoBytes converts OTLP Collector ExportTraceServiceRequest
+// ProtoBuf bytes to the internal Traces. Overrides current data.
+// Calling this function on zero-initialized structure causes panic.
+// Use it with NewTraces or on existing initialized Traces.
+func (td Traces) FromOtlpProtoBytes(data []byte) error {
+	traces := otlpcollectortrace.ExportTraceServiceRequest{}
+	if err := traces.Unmarshal(data); err != nil {
+		return err
+	}
+	*td.orig = traces.ResourceSpans
+	return nil
 }
 
 // Clone returns a copy of Traces.
 func (td Traces) Clone() Traces {
-	otlp := TracesToOtlp(td)
-	resourceSpansClones := make([]*otlptrace.ResourceSpans, 0, len(otlp))
-	for _, resourceSpans := range otlp {
-		resourceSpansClones = append(resourceSpansClones,
-			proto.Clone(resourceSpans).(*otlptrace.ResourceSpans))
-	}
-	return TracesFromOtlp(resourceSpansClones)
+	rss := NewResourceSpansSlice()
+	td.ResourceSpans().CopyTo(rss)
+	return Traces(rss)
 }
 
 // SpanCount calculates the total number of spans.
@@ -94,28 +109,6 @@ func (td Traces) Size() int {
 func (td Traces) ResourceSpans() ResourceSpansSlice {
 	return newResourceSpansSlice(td.orig)
 }
-
-type TraceID []byte
-
-// NewTraceID returns a new TraceID.
-func NewTraceID(bytes []byte) TraceID { return bytes }
-
-func (t TraceID) Bytes() []byte {
-	return t
-}
-
-func (t TraceID) String() string { return hex.EncodeToString(t) }
-
-type SpanID []byte
-
-// NewSpanID returns a new SpanID.
-func NewSpanID(bytes []byte) SpanID { return bytes }
-
-func (s SpanID) Bytes() []byte {
-	return s
-}
-
-func (s SpanID) String() string { return hex.EncodeToString(s) }
 
 // TraceState in w3c-trace-context format: https://www.w3.org/TR/trace-context/#tracestate-header
 type TraceState string

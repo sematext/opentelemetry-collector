@@ -1,14 +1,18 @@
-# OpenTelemetry Receiver
+# OTLP Receiver
 
-Receives traces and/or metrics via gRPC using
-[OpenTelemetry](https://opentelemetry.io/) format.
+Receives traces and/or metrics via gRPC or HTTP using [OTLP](
+https://github.com/open-telemetry/opentelemetry-specification/blob/master/specification/protocol/otlp.md)
+format.
 
-To get started, all that is required to enable the OpenTelemetry receiver is to
+*Important: OTLP metrics format is currently marked as "Alpha" and may change in
+incompatible way any time.*
+
+To get started, all that is required to enable the OTLP receiver is to
 include it in the receiver definitions.
 
 The following settings are required:
 
-- `endpoint` (default = 0.0.0.0:55680): host:port to which the exporter is
+- `endpoint` (default = 0.0.0.0:55680): host:port to which the receiver is
   going to receive traces or metrics, using the gRPC protocol. The valid syntax
   is described at https://github.com/grpc/grpc/blob/master/doc/naming.md.
 - `transport` (default = tcp): which transport to use between `tcp` and `unix`.
@@ -69,14 +73,16 @@ receivers:
 ```
 
 ## Writing with HTTP/JSON
-The OpenTelemetry receiver can receive trace export calls via HTTP/JSON in
+The OTLP receiver can receive trace export calls via HTTP/JSON in
 addition to gRPC. The HTTP/JSON address is the same as gRPC as the protocol is
 recognized and processed accordingly. Note the format needs to be [protobuf JSON
 serialization](https://developers.google.com/protocol-buffers/docs/proto3#json).
 
 IMPORTANT: bytes fields are encoded as base64 strings.
 
-To write traces with HTTP/JSON, `POST` to `[address]/v1/trace`.
+To write traces with HTTP/JSON, `POST` to `[address]/v1/traces` for traces,
+to `[address]/v1/metrics` for metrics, to `[address]/v1/logs` for logs. The default
+port is `55681`.
 
 The HTTP/JSON endpoint can also optionally configure
 [CORS](https://fetch.spec.whatwg.org/#cors-protocol), which is enabled by

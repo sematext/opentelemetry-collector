@@ -20,6 +20,7 @@ import (
 	otlplogs "go.opentelemetry.io/collector/internal/data/opentelemetry-proto-gen/logs/v1"
 
 	"go.opentelemetry.io/collector/consumer/pdata"
+	"go.opentelemetry.io/collector/internal"
 	otlpcommon "go.opentelemetry.io/collector/internal/data/opentelemetry-proto-gen/common/v1"
 )
 
@@ -54,7 +55,7 @@ func generateLogOtlpOneEmptyResourceLogs() []*otlplogs.ResourceLogs {
 }
 
 func GenerateLogDataOneEmptyOneNilResourceLogs() pdata.Logs {
-	return pdata.LogsFromOtlp(generateLogOtlpOneEmptyOneNilResourceLogs())
+	return pdata.LogsFromInternalRep(internal.LogsFromOtlp(generateLogOtlpOneEmptyOneNilResourceLogs()))
 
 }
 
@@ -62,6 +63,18 @@ func generateLogOtlpOneEmptyOneNilResourceLogs() []*otlplogs.ResourceLogs {
 	return []*otlplogs.ResourceLogs{
 		{},
 		nil,
+	}
+}
+
+func GenerateLogDataOneEmptyOneNilInstrumentationLibrary() pdata.Logs {
+	return pdata.LogsFromInternalRep(internal.LogsFromOtlp(generateLogOtlpOneEmptyOneNilInstrumentationLibrary()))
+
+}
+
+func generateLogOtlpOneEmptyOneNilInstrumentationLibrary() []*otlplogs.ResourceLogs {
+	return []*otlplogs.ResourceLogs{
+		{},
+		{nil, []*otlplogs.InstrumentationLibraryLogs{nil}},
 	}
 }
 
@@ -104,7 +117,7 @@ func generateLogOtlpOneEmptyLogs() []*otlplogs.ResourceLogs {
 }
 
 func GenerateLogDataOneEmptyOneNilLogRecord() pdata.Logs {
-	return pdata.LogsFromOtlp(generateLogOtlpOneEmptyOneNilLogRecord())
+	return pdata.LogsFromInternalRep(internal.LogsFromOtlp(generateLogOtlpOneEmptyOneNilLogRecord()))
 }
 
 func generateLogOtlpOneEmptyOneNilLogRecord() []*otlplogs.ResourceLogs {
@@ -173,7 +186,7 @@ func generateLogOtlpOneLog() []*otlplogs.ResourceLogs {
 }
 
 func GenerateLogDataOneLogOneNil() pdata.Logs {
-	return pdata.LogsFromOtlp(generateLogOtlpOneLogOneNil())
+	return pdata.LogsFromInternalRep(internal.LogsFromOtlp(generateLogOtlpOneLogOneNil()))
 }
 
 func generateLogOtlpOneLogOneNil() []*otlplogs.ResourceLogs {
@@ -268,8 +281,8 @@ func fillLogOne(log pdata.LogRecord) {
 	log.SetDroppedAttributesCount(1)
 	log.SetSeverityNumber(pdata.SeverityNumberINFO)
 	log.SetSeverityText("Info")
-	log.SetSpanID([]byte{0x01, 0x02, 0x04, 0x08})
-	log.SetTraceID([]byte{0x08, 0x04, 0x02, 0x01})
+	log.SetSpanID(pdata.NewSpanID([8]byte{0x01, 0x02, 0x04, 0x08}))
+	log.SetTraceID(pdata.NewTraceID([16]byte{0x08, 0x04, 0x02, 0x01}))
 
 	attrs := log.Attributes()
 	attrs.InsertString("app", "server")
@@ -286,9 +299,9 @@ func generateOtlpLogOne() *otlplogs.LogRecord {
 		SeverityNumber:         otlplogs.SeverityNumber_SEVERITY_NUMBER_INFO,
 		SeverityText:           "Info",
 		Body:                   &otlpcommon.AnyValue{Value: &otlpcommon.AnyValue_StringValue{StringValue: "This is a log message"}},
-		SpanId:                 []byte{0x01, 0x02, 0x04, 0x08},
-		TraceId:                []byte{0x08, 0x04, 0x02, 0x01},
-		Attributes: []*otlpcommon.KeyValue{
+		SpanId:                 otlpcommon.NewSpanID([8]byte{0x01, 0x02, 0x04, 0x08}),
+		TraceId:                otlpcommon.NewTraceID([16]byte{0x08, 0x04, 0x02, 0x01}),
+		Attributes: []otlpcommon.KeyValue{
 			{
 				Key:   "app",
 				Value: &otlpcommon.AnyValue{Value: &otlpcommon.AnyValue_StringValue{StringValue: "server"}},
@@ -323,7 +336,7 @@ func generateOtlpLogTwo() *otlplogs.LogRecord {
 		SeverityNumber:         otlplogs.SeverityNumber_SEVERITY_NUMBER_INFO,
 		SeverityText:           "Info",
 		Body:                   &otlpcommon.AnyValue{Value: &otlpcommon.AnyValue_StringValue{StringValue: "something happened"}},
-		Attributes: []*otlpcommon.KeyValue{
+		Attributes: []otlpcommon.KeyValue{
 			{
 				Key:   "customer",
 				Value: &otlpcommon.AnyValue{Value: &otlpcommon.AnyValue_StringValue{StringValue: "acme"}},

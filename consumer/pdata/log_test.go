@@ -18,7 +18,9 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
+	"go.opentelemetry.io/collector/internal"
 	otlplogs "go.opentelemetry.io/collector/internal/data/opentelemetry-proto-gen/logs/v1"
 )
 
@@ -46,13 +48,13 @@ func TestLogRecordCount(t *testing.T) {
 }
 
 func TestLogRecordCountWithNils(t *testing.T) {
-	assert.EqualValues(t, 0, LogsFromOtlp([]*otlplogs.ResourceLogs{nil, {}}).LogRecordCount())
-	assert.EqualValues(t, 0, LogsFromOtlp([]*otlplogs.ResourceLogs{
+	assert.EqualValues(t, 0, LogsFromInternalRep(internal.LogsFromOtlp([]*otlplogs.ResourceLogs{nil, {}})).LogRecordCount())
+	assert.EqualValues(t, 0, LogsFromInternalRep(internal.LogsFromOtlp([]*otlplogs.ResourceLogs{
 		{
 			InstrumentationLibraryLogs: []*otlplogs.InstrumentationLibraryLogs{nil, {}},
 		},
-	}).LogRecordCount())
-	assert.EqualValues(t, 2, LogsFromOtlp([]*otlplogs.ResourceLogs{
+	})).LogRecordCount())
+	assert.EqualValues(t, 2, LogsFromInternalRep(internal.LogsFromOtlp([]*otlplogs.ResourceLogs{
 		{
 			InstrumentationLibraryLogs: []*otlplogs.InstrumentationLibraryLogs{
 				{
@@ -60,12 +62,73 @@ func TestLogRecordCountWithNils(t *testing.T) {
 				},
 			},
 		},
-	}).LogRecordCount())
+	})).LogRecordCount())
 }
 
 func TestToFromLogProto(t *testing.T) {
 	otlp := []*otlplogs.ResourceLogs(nil)
-	td := LogsFromOtlp(otlp)
+	td := LogsFromInternalRep(internal.LogsFromOtlp(otlp))
 	assert.EqualValues(t, NewLogs(), td)
-	assert.EqualValues(t, otlp, LogsToOtlp(td))
+	assert.EqualValues(t, otlp, *td.orig)
+}
+
+func TestLogsToFromOtlpProtoBytes(t *testing.T) {
+	send := NewLogs()
+	fillTestResourceLogsSlice(send.ResourceLogs())
+	bytes, err := send.ToOtlpProtoBytes()
+	assert.NoError(t, err)
+
+	recv := NewLogs()
+	err = recv.FromOtlpProtoBytes(bytes)
+	assert.NoError(t, err)
+	assert.EqualValues(t, send, recv)
+}
+
+func TestLogsFromInvalidOtlpProtoBytes(t *testing.T) {
+	err := NewLogs().FromOtlpProtoBytes([]byte{0xFF})
+	assert.EqualError(t, err, "unexpected EOF")
+}
+
+func TestLogsClone(t *testing.T) {
+	logs := NewLogs()
+	fillTestResourceLogsSlice(logs.ResourceLogs())
+	assert.EqualValues(t, logs, logs.Clone())
+}
+
+func BenchmarkLogsClone(b *testing.B) {
+	logs := NewLogs()
+	fillTestResourceLogsSlice(logs.ResourceLogs())
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		clone := logs.Clone()
+		if clone.ResourceLogs().Len() != logs.ResourceLogs().Len() {
+			b.Fail()
+		}
+	}
+}
+
+func BenchmarkLogsToOtlp(b *testing.B) {
+	traces := NewLogs()
+	fillTestResourceLogsSlice(traces.ResourceLogs())
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		buf, err := traces.ToOtlpProtoBytes()
+		require.NoError(b, err)
+		assert.NotEqual(b, 0, len(buf))
+	}
+}
+
+func BenchmarkLogsFromOtlp(b *testing.B) {
+	baseLogs := NewLogs()
+	fillTestResourceLogsSlice(baseLogs.ResourceLogs())
+	buf, err := baseLogs.ToOtlpProtoBytes()
+	require.NoError(b, err)
+	assert.NotEqual(b, 0, len(buf))
+	b.ResetTimer()
+	b.ReportAllocs()
+	for n := 0; n < b.N; n++ {
+		traces := NewLogs()
+		require.NoError(b, traces.FromOtlpProtoBytes(buf))
+		assert.Equal(b, baseLogs.ResourceLogs().Len(), traces.ResourceLogs().Len())
+	}
 }

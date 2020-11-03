@@ -30,6 +30,7 @@ import (
 	"go.opentelemetry.io/collector/consumer/consumererror"
 	"go.opentelemetry.io/collector/consumer/pdata"
 	"go.opentelemetry.io/collector/exporter/exporterhelper"
+	"go.opentelemetry.io/collector/internal"
 	otlplogs "go.opentelemetry.io/collector/internal/data/opentelemetry-proto-gen/collector/logs/v1"
 	otlpmetrics "go.opentelemetry.io/collector/internal/data/opentelemetry-proto-gen/collector/metrics/v1"
 	otlptrace "go.opentelemetry.io/collector/internal/data/opentelemetry-proto-gen/collector/trace/v1"
@@ -38,14 +39,7 @@ import (
 type exporterImp struct {
 	// Input configuration.
 	config *Config
-	w      sender
-}
-
-type sender interface {
-	exportTrace(ctx context.Context, request *otlptrace.ExportTraceServiceRequest) error
-	exportMetrics(ctx context.Context, request *otlpmetrics.ExportMetricsServiceRequest) error
-	exportLogs(ctx context.Context, request *otlplogs.ExportLogsServiceRequest) error
-	stop() error
+	w      *grpcSender
 }
 
 var (
@@ -101,7 +95,7 @@ func (e *exporterImp) pushMetricsData(ctx context.Context, md pdata.Metrics) (in
 
 func (e *exporterImp) pushLogData(ctx context.Context, logs pdata.Logs) (int, error) {
 	request := &otlplogs.ExportLogsServiceRequest{
-		ResourceLogs: pdata.LogsToOtlp(logs),
+		ResourceLogs: internal.LogsToOtlp(logs.InternalRep()),
 	}
 	err := e.w.exportLogs(ctx, request)
 
@@ -121,7 +115,7 @@ type grpcSender struct {
 	waitForReady   bool
 }
 
-func newGrpcSender(config *Config) (sender, error) {
+func newGrpcSender(config *Config) (*grpcSender, error) {
 	dialOpts, err := config.GRPCClientSettings.ToDialOptions()
 	if err != nil {
 		return nil, err

@@ -23,6 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.opentelemetry.io/collector/consumer/pdata"
+	"go.opentelemetry.io/collector/internal"
 	collectorlogs "go.opentelemetry.io/collector/internal/data/opentelemetry-proto-gen/collector/logs/v1"
 	collectormetrics "go.opentelemetry.io/collector/internal/data/opentelemetry-proto-gen/collector/metrics/v1"
 	collectortrace "go.opentelemetry.io/collector/internal/data/opentelemetry-proto-gen/collector/trace/v1"
@@ -75,7 +76,7 @@ func TestFileLogsExporterNoErrors(t *testing.T) {
 	ld := []*logspb.ResourceLogs{
 		{
 			Resource: &otresourcepb.Resource{
-				Attributes: []*otlpcommon.KeyValue{
+				Attributes: []otlpcommon.KeyValue{
 					{
 						Key:   "attr1",
 						Value: &otlpcommon.AnyValue{Value: &otlpcommon.AnyValue_StringValue{StringValue: "value1"}},
@@ -99,7 +100,7 @@ func TestFileLogsExporterNoErrors(t *testing.T) {
 		},
 		{
 			Resource: &otresourcepb.Resource{
-				Attributes: []*otlpcommon.KeyValue{
+				Attributes: []otlpcommon.KeyValue{
 					{
 						Key:   "attr2",
 						Value: &otlpcommon.AnyValue{Value: &otlpcommon.AnyValue_StringValue{StringValue: "value2"}},
@@ -118,7 +119,7 @@ func TestFileLogsExporterNoErrors(t *testing.T) {
 			},
 		},
 	}
-	assert.NoError(t, exporter.ConsumeLogs(context.Background(), pdata.LogsFromOtlp(ld)))
+	assert.NoError(t, exporter.ConsumeLogs(context.Background(), pdata.LogsFromInternalRep(internal.LogsFromOtlp(ld))))
 	assert.NoError(t, exporter.Shutdown(context.Background()))
 
 	var unmarshaler = &jsonpb.Unmarshaler{}
@@ -134,7 +135,7 @@ func TestFileLogsExporterErrors(t *testing.T) {
 	ld := []*logspb.ResourceLogs{
 		{
 			Resource: &otresourcepb.Resource{
-				Attributes: []*otlpcommon.KeyValue{
+				Attributes: []otlpcommon.KeyValue{
 					{
 						Key:   "attr1",
 						Value: &otlpcommon.AnyValue{Value: &otlpcommon.AnyValue_StringValue{StringValue: "value1"}},
@@ -158,7 +159,7 @@ func TestFileLogsExporterErrors(t *testing.T) {
 		},
 		{
 			Resource: &otresourcepb.Resource{
-				Attributes: []*otlpcommon.KeyValue{
+				Attributes: []otlpcommon.KeyValue{
 					{
 						Key:   "attr2",
 						Value: &otlpcommon.AnyValue{Value: &otlpcommon.AnyValue_StringValue{StringValue: "value2"}},
@@ -209,7 +210,7 @@ func TestFileLogsExporterErrors(t *testing.T) {
 			exporter := &fileExporter{file: mf}
 			require.NotNil(t, exporter)
 
-			assert.Error(t, exporter.ConsumeLogs(context.Background(), pdata.LogsFromOtlp(ld)))
+			assert.Error(t, exporter.ConsumeLogs(context.Background(), pdata.LogsFromInternalRep(internal.LogsFromOtlp(ld))))
 			assert.NoError(t, exporter.Shutdown(context.Background()))
 		})
 	}

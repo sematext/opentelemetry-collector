@@ -16,22 +16,26 @@ package filesystemscraper
 
 import (
 	"context"
-	"fmt"
+	"strings"
 	"time"
 
 	"github.com/shirou/gopsutil/disk"
 
-	"go.opentelemetry.io/collector/component/componenterror"
+	"go.opentelemetry.io/collector/consumer/consumererror"
 	"go.opentelemetry.io/collector/consumer/pdata"
-	"go.opentelemetry.io/collector/internal/processor/filterset"
 	"go.opentelemetry.io/collector/receiver/hostmetricsreceiver/internal"
+	"go.opentelemetry.io/collector/receiver/receiverhelper"
+)
+
+const (
+	standardMetricsLen = 1
+	metricsLen         = standardMetricsLen + systemSpecificMetricsLen
 )
 
 // scraper for FileSystem Metrics
 type scraper struct {
-	config    *Config
-	includeFS filterset.FilterSet
-	excludeFS filterset.FilterSet
+	config   *Config
+	fsFilter fsFilter
 
 	// for mocking gopsutil disk.Partitions & disk.Usage
 	partitions func(bool) ([]disk.PartitionStat, error)
@@ -39,45 +43,23 @@ type scraper struct {
 }
 
 type deviceUsage struct {
-	deviceName string
-	usage      *disk.UsageStat
+	partition disk.PartitionStat
+	usage     *disk.UsageStat
 }
 
 // newFileSystemScraper creates a FileSystem Scraper
 func newFileSystemScraper(_ context.Context, cfg *Config) (*scraper, error) {
-	scraper := &scraper{config: cfg, partitions: disk.Partitions, usage: disk.Usage}
-
-	var err error
-
-	if len(cfg.Include.Devices) > 0 {
-		scraper.includeFS, err = filterset.CreateFilterSet(cfg.Include.Devices, &cfg.Include.Config)
-		if err != nil {
-			return nil, fmt.Errorf("error creating device include filters: %w", err)
-		}
+	fsFilter, err := cfg.createFilter()
+	if err != nil {
+		return nil, err
 	}
 
-	if len(cfg.Exclude.Devices) > 0 {
-		scraper.excludeFS, err = filterset.CreateFilterSet(cfg.Exclude.Devices, &cfg.Exclude.Config)
-		if err != nil {
-			return nil, fmt.Errorf("error creating device exclude filters: %w", err)
-		}
-	}
-
+	scraper := &scraper{config: cfg, partitions: disk.Partitions, usage: disk.Usage, fsFilter: *fsFilter}
 	return scraper, nil
 }
 
-// Initialize
-func (s *scraper) Initialize(_ context.Context) error {
-	return nil
-}
-
-// Close
-func (s *scraper) Close(_ context.Context) error {
-	return nil
-}
-
-// ScrapeMetrics
-func (s *scraper) ScrapeMetrics(_ context.Context) (pdata.MetricSlice, error) {
+// Scrape
+func (s *scraper) Scrape(_ context.Context) (pdata.MetricSlice, error) {
 	metrics := pdata.NewMetricSlice()
 
 	now := internal.TimeToUnixNano(time.Now())
@@ -85,46 +67,38 @@ func (s *scraper) ScrapeMetrics(_ context.Context) (pdata.MetricSlice, error) {
 	// omit logical (virtual) filesystems (not relevant for windows)
 	partitions, err := s.partitions( /*all=*/ false)
 	if err != nil {
-		return metrics, err
+		return metrics, consumererror.NewPartialScrapeError(err, metricsLen)
 	}
 
 	var errors []error
 	usages := make([]*deviceUsage, 0, len(partitions))
 	for _, partition := range partitions {
-		// Skip partition stats having more than one mount point for the same device
-		if deviceUsageAlreadySet(partition.Device, usages) {
+		if !s.fsFilter.includePartition(partition) {
+			continue
+		}
+		usage, usageErr := s.usage(partition.Mountpoint)
+		if usageErr != nil {
+			errors = append(errors, consumererror.NewPartialScrapeError(usageErr, 0))
 			continue
 		}
 
-		usage, err := s.usage(partition.Mountpoint)
-		if err != nil {
-			errors = append(errors, err)
-			continue
-		}
-
-		usages = append(usages, &deviceUsage{partition.Device, usage})
+		usages = append(usages, &deviceUsage{partition, usage})
 	}
 
-	// filter devices by name
-	usages = s.filterByDevice(usages)
-
 	if len(usages) > 0 {
-		metrics.Resize(1 + systemSpecificMetricsLen)
-
+		metrics.Resize(metricsLen)
 		initializeFileSystemUsageMetric(metrics.At(0), now, usages)
 		appendSystemSpecificMetrics(metrics, 1, now, usages)
 	}
 
-	return metrics, componenterror.CombineErrors(errors)
-}
-
-func deviceUsageAlreadySet(device string, usages []*deviceUsage) bool {
-	for _, usage := range usages {
-		if device == usage.deviceName {
-			return true
-		}
+	err = receiverhelper.CombineScrapeErrors(errors)
+	if err != nil && len(usages) == 0 {
+		partialErr := err.(consumererror.PartialScrapeError)
+		partialErr.Failed = metricsLen
+		err = partialErr
 	}
-	return false
+
+	return metrics, err
 }
 
 func initializeFileSystemUsageMetric(metric pdata.Metric, now pdata.TimestampUnixNano, deviceUsages []*deviceUsage) {
@@ -137,29 +111,57 @@ func initializeFileSystemUsageMetric(metric pdata.Metric, now pdata.TimestampUni
 	}
 }
 
-func initializeFileSystemUsageDataPoint(dataPoint pdata.IntDataPoint, now pdata.TimestampUnixNano, deviceLabel string, stateLabel string, value int64) {
+func initializeFileSystemUsageDataPoint(dataPoint pdata.IntDataPoint, now pdata.TimestampUnixNano, partition disk.PartitionStat, stateLabel string, value int64) {
 	labelsMap := dataPoint.LabelsMap()
-	labelsMap.Insert(deviceLabelName, deviceLabel)
+	labelsMap.Insert(deviceLabelName, partition.Device)
+	labelsMap.Insert(typeLabelName, partition.Fstype)
+	labelsMap.Insert(mountModeLabelName, getMountMode(partition.Opts))
+	labelsMap.Insert(mountPointLabelName, partition.Mountpoint)
 	labelsMap.Insert(stateLabelName, stateLabel)
 	dataPoint.SetTimestamp(now)
 	dataPoint.SetValue(value)
 }
 
-func (s *scraper) filterByDevice(usages []*deviceUsage) []*deviceUsage {
-	if s.includeFS == nil && s.excludeFS == nil {
-		return usages
+func getMountMode(opts string) string {
+	splitOptions := strings.Split(opts, ",")
+	if exists(splitOptions, "rw") {
+		return "rw"
+	} else if exists(splitOptions, "ro") {
+		return "ro"
 	}
-
-	filteredUsages := make([]*deviceUsage, 0, len(usages))
-	for _, usage := range usages {
-		if s.includeDevice(usage.deviceName) {
-			filteredUsages = append(filteredUsages, usage)
-		}
-	}
-	return filteredUsages
+	return "unknown"
 }
 
-func (s *scraper) includeDevice(deviceName string) bool {
-	return (s.includeFS == nil || s.includeFS.Matches(deviceName)) &&
-		(s.excludeFS == nil || !s.excludeFS.Matches(deviceName))
+func exists(options []string, opt string) bool {
+	for _, o := range options {
+		if o == opt {
+			return true
+		}
+	}
+	return false
+}
+
+func (f *fsFilter) includePartition(partition disk.PartitionStat) bool {
+	// If filters do not exist, return early.
+	if !f.filtersExist || (f.includeDevice(partition.Device) &&
+		f.includeFSType(partition.Fstype) &&
+		f.includeMountPoint(partition.Mountpoint)) {
+		return true
+	}
+	return false
+}
+
+func (f *fsFilter) includeDevice(deviceName string) bool {
+	return (f.includeDeviceFilter == nil || f.includeDeviceFilter.Matches(deviceName)) &&
+		(f.excludeDeviceFilter == nil || !f.excludeDeviceFilter.Matches(deviceName))
+}
+
+func (f *fsFilter) includeFSType(fsType string) bool {
+	return (f.includeFSTypeFilter == nil || f.includeFSTypeFilter.Matches(fsType)) &&
+		(f.excludeFSTypeFilter == nil || !f.excludeFSTypeFilter.Matches(fsType))
+}
+
+func (f *fsFilter) includeMountPoint(mountPoint string) bool {
+	return (f.includeMountPointFilter == nil || f.includeMountPointFilter.Matches(mountPoint)) &&
+		(f.excludeMountPointFilter == nil || !f.excludeMountPointFilter.Matches(mountPoint))
 }

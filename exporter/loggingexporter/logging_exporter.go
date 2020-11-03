@@ -60,8 +60,8 @@ func (b *logDataBuffer) logStringMap(description string, sm pdata.StringMap) {
 	}
 
 	b.logEntry("%s:", description)
-	sm.ForEach(func(k string, v pdata.StringValue) {
-		b.logEntry("     -> %s: %s", k, v.Value())
+	sm.ForEach(func(k string, v string) {
+		b.logEntry("     -> %s: %s", k, v)
 	})
 }
 
@@ -165,8 +165,8 @@ func (b *logDataBuffer) logDoubleHistogramDataPoints(ps pdata.DoubleHistogramDat
 
 		buckets := p.BucketCounts()
 		if len(buckets) != 0 {
-			for _, bucket := range buckets {
-				b.logEntry("Buckets #%d, Count: %d", i, bucket)
+			for j, bucket := range buckets {
+				b.logEntry("Buckets #%d, Count: %d", j, bucket)
 			}
 		}
 	}
@@ -196,8 +196,8 @@ func (b *logDataBuffer) logIntHistogramDataPoints(ps pdata.IntHistogramDataPoint
 
 		buckets := p.BucketCounts()
 		if len(buckets) != 0 {
-			for _, bucket := range buckets {
-				b.logEntry("Buckets #%d, Count: %d", i, bucket)
+			for j, bucket := range buckets {
+				b.logEntry("Buckets #%d, Count: %d", j, bucket)
 			}
 		}
 	}
@@ -254,8 +254,8 @@ func (b *logDataBuffer) logLinks(description string, sl pdata.SpanLinkSlice) {
 			continue
 		}
 		b.logEntry("SpanLink #%d", i)
-		b.logEntry("     -> Trace ID: %s", l.TraceID().String())
-		b.logEntry("     -> ID: %s", l.SpanID().String())
+		b.logEntry("     -> Trace ID: %s", l.TraceID().HexString())
+		b.logEntry("     -> ID: %s", l.SpanID().HexString())
 		b.logEntry("     -> TraceState: %s", l.TraceState())
 		b.logEntry("     -> DroppedAttributesCount: %d", l.DroppedAttributesCount())
 		if l.Attributes().Len() == 0 {
@@ -278,9 +278,26 @@ func attributeValueToString(av pdata.AttributeValue) string {
 		return strconv.FormatFloat(av.DoubleVal(), 'f', -1, 64)
 	case pdata.AttributeValueINT:
 		return strconv.FormatInt(av.IntVal(), 10)
+	case pdata.AttributeValueARRAY:
+		return attributeValueArrayToString(av.ArrayVal())
 	default:
 		return fmt.Sprintf("<Unknown OpenTelemetry attribute value type %q>", av.Type())
 	}
+}
+
+func attributeValueArrayToString(av pdata.AnyValueArray) string {
+	var b strings.Builder
+	b.WriteByte('[')
+	for i := 0; i < av.Len(); i++ {
+		if i < av.Len()-1 {
+			fmt.Fprintf(&b, "%s, ", attributeValueToString(av.At(i)))
+		} else {
+			b.WriteString(attributeValueToString(av.At(i)))
+		}
+	}
+
+	b.WriteByte(']')
+	return b.String()
 }
 
 type loggingExporter struct {
@@ -293,7 +310,7 @@ func (s *loggingExporter) pushTraceData(
 	td pdata.Traces,
 ) (int, error) {
 
-	s.logger.Info("TraceExporter", zap.Int("#spans", td.SpanCount()))
+	s.logger.Info("TracesExporter", zap.Int("#spans", td.SpanCount()))
 
 	if !s.debug {
 		return 0, nil
@@ -332,9 +349,9 @@ func (s *loggingExporter) pushTraceData(
 					continue
 				}
 
-				buf.logAttr("Trace ID", span.TraceID().String())
-				buf.logAttr("Parent ID", span.ParentSpanID().String())
-				buf.logAttr("ID", span.SpanID().String())
+				buf.logAttr("Trace ID", span.TraceID().HexString())
+				buf.logAttr("Parent ID", span.ParentSpanID().HexString())
+				buf.logAttr("ID", span.SpanID().HexString())
 				buf.logAttr("Name", span.Name())
 				buf.logAttr("Kind", span.Kind().String())
 				buf.logAttr("Start time", span.StartTime().String())
@@ -408,9 +425,9 @@ func (s *loggingExporter) pushMetricsData(
 	return 0, nil
 }
 
-// newTraceExporter creates an exporter.TraceExporter that just drops the
+// newTraceExporter creates an exporter.TracesExporter that just drops the
 // received data and logs debugging messages.
-func newTraceExporter(config configmodels.Exporter, level string, logger *zap.Logger) (component.TraceExporter, error) {
+func newTraceExporter(config configmodels.Exporter, level string, logger *zap.Logger) (component.TracesExporter, error) {
 	s := &loggingExporter{
 		debug:  level == "debug",
 		logger: logger,
@@ -418,6 +435,7 @@ func newTraceExporter(config configmodels.Exporter, level string, logger *zap.Lo
 
 	return exporterhelper.NewTraceExporter(
 		config,
+		logger,
 		s.pushTraceData,
 		// Disable Timeout/RetryOnFailure and SendingQueue
 		exporterhelper.WithTimeout(exporterhelper.TimeoutSettings{Timeout: 0}),
@@ -437,6 +455,7 @@ func newMetricsExporter(config configmodels.Exporter, level string, logger *zap.
 
 	return exporterhelper.NewMetricsExporter(
 		config,
+		logger,
 		s.pushMetricsData,
 		// Disable Timeout/RetryOnFailure and SendingQueue
 		exporterhelper.WithTimeout(exporterhelper.TimeoutSettings{Timeout: 0}),
@@ -456,6 +475,7 @@ func newLogsExporter(config configmodels.Exporter, level string, logger *zap.Log
 
 	return exporterhelper.NewLogsExporter(
 		config,
+		logger,
 		s.pushLogData,
 		// Disable Timeout/RetryOnFailure and SendingQueue
 		exporterhelper.WithTimeout(exporterhelper.TimeoutSettings{Timeout: 0}),

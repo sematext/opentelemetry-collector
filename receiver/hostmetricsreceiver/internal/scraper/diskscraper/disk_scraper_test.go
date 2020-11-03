@@ -16,6 +16,7 @@ package diskscraper
 
 import (
 	"context"
+	"errors"
 	"runtime"
 	"testing"
 
@@ -27,18 +28,32 @@ import (
 	"go.opentelemetry.io/collector/receiver/hostmetricsreceiver/internal"
 )
 
-func TestScrapeMetrics(t *testing.T) {
+func TestScrape(t *testing.T) {
 	type testCase struct {
-		name          string
-		config        Config
-		expectMetrics bool
-		newErrRegex   string
+		name              string
+		config            Config
+		bootTimeFunc      func() (uint64, error)
+		newErrRegex       string
+		initializationErr string
+		expectMetrics     bool
+		expectedStartTime pdata.TimestampUnixNano
 	}
 
 	testCases := []testCase{
 		{
 			name:          "Standard",
 			expectMetrics: true,
+		},
+		{
+			name:              "Validate Start Time",
+			bootTimeFunc:      func() (uint64, error) { return 100, nil },
+			expectMetrics:     true,
+			expectedStartTime: 100 * 1e9,
+		},
+		{
+			name:              "Boot Time Error",
+			bootTimeFunc:      func() (uint64, error) { return 0, errors.New("err1") },
+			initializationErr: "err1",
 		},
 		{
 			name:          "Include Filter that matches nothing",
@@ -67,11 +82,18 @@ func TestScrapeMetrics(t *testing.T) {
 			}
 			require.NoError(t, err, "Failed to create disk scraper: %v", err)
 
-			err = scraper.Initialize(context.Background())
-			require.NoError(t, err, "Failed to initialize disk scraper: %v", err)
-			defer func() { assert.NoError(t, scraper.Close(context.Background())) }()
+			if test.bootTimeFunc != nil {
+				scraper.bootTime = test.bootTimeFunc
+			}
 
-			metrics, err := scraper.ScrapeMetrics(context.Background())
+			err = scraper.Initialize(context.Background())
+			if test.initializationErr != "" {
+				assert.EqualError(t, err, test.initializationErr)
+				return
+			}
+			require.NoError(t, err, "Failed to initialize disk scraper: %v", err)
+
+			metrics, err := scraper.Scrape(context.Background())
 			require.NoError(t, err, "Failed to scrape metrics: %v", err)
 
 			if !test.expectMetrics {
@@ -81,13 +103,14 @@ func TestScrapeMetrics(t *testing.T) {
 
 			assert.GreaterOrEqual(t, metrics.Len(), 4)
 
-			assertInt64DiskMetricValid(t, metrics.At(0), diskIODescriptor, 0)
-			assertInt64DiskMetricValid(t, metrics.At(1), diskOpsDescriptor, 0)
-			assertDoubleDiskMetricValid(t, metrics.At(2), diskTimeDescriptor, 0)
-			assertDiskPendingOperationsMetricValid(t, metrics.At(3))
+			assertInt64DiskMetricValid(t, metrics.At(0), diskIODescriptor, true, test.expectedStartTime)
+			assertInt64DiskMetricValid(t, metrics.At(1), diskOpsDescriptor, true, test.expectedStartTime)
+			assertDoubleDiskMetricValid(t, metrics.At(2), diskIOTimeDescriptor, false, test.expectedStartTime)
+			assertDoubleDiskMetricValid(t, metrics.At(3), diskOperationTimeDescriptor, true, test.expectedStartTime)
+			assertDiskPendingOperationsMetricValid(t, metrics.At(4))
 
 			if runtime.GOOS == "linux" {
-				assertInt64DiskMetricValid(t, metrics.At(4), diskMergedDescriptor, 0)
+				assertInt64DiskMetricValid(t, metrics.At(5), diskMergedDescriptor, true, test.expectedStartTime)
 			}
 
 			internal.AssertSameTimeStampForAllMetrics(t, metrics)
@@ -95,26 +118,42 @@ func TestScrapeMetrics(t *testing.T) {
 	}
 }
 
-func assertInt64DiskMetricValid(t *testing.T, metric pdata.Metric, expectedDescriptor pdata.Metric, startTime pdata.TimestampUnixNano) {
+func assertInt64DiskMetricValid(t *testing.T, metric pdata.Metric, expectedDescriptor pdata.Metric, expectDirectionLabels bool, startTime pdata.TimestampUnixNano) {
 	internal.AssertDescriptorEqual(t, expectedDescriptor, metric)
 	if startTime != 0 {
 		internal.AssertIntSumMetricStartTimeEquals(t, metric, startTime)
 	}
-	assert.GreaterOrEqual(t, metric.IntSum().DataPoints().Len(), 2)
+
+	minExpectedPoints := 1
+	if expectDirectionLabels {
+		minExpectedPoints = 2
+	}
+	assert.GreaterOrEqual(t, metric.IntSum().DataPoints().Len(), minExpectedPoints)
+
 	internal.AssertIntSumMetricLabelExists(t, metric, 0, deviceLabelName)
-	internal.AssertIntSumMetricLabelHasValue(t, metric, 0, directionLabelName, readDirectionLabelValue)
-	internal.AssertIntSumMetricLabelHasValue(t, metric, 1, directionLabelName, writeDirectionLabelValue)
+	if expectDirectionLabels {
+		internal.AssertIntSumMetricLabelHasValue(t, metric, 0, directionLabelName, readDirectionLabelValue)
+		internal.AssertIntSumMetricLabelHasValue(t, metric, 1, directionLabelName, writeDirectionLabelValue)
+	}
 }
 
-func assertDoubleDiskMetricValid(t *testing.T, metric pdata.Metric, expectedDescriptor pdata.Metric, startTime pdata.TimestampUnixNano) {
+func assertDoubleDiskMetricValid(t *testing.T, metric pdata.Metric, expectedDescriptor pdata.Metric, expectDirectionLabels bool, startTime pdata.TimestampUnixNano) {
 	internal.AssertDescriptorEqual(t, expectedDescriptor, metric)
 	if startTime != 0 {
 		internal.AssertDoubleSumMetricStartTimeEquals(t, metric, startTime)
 	}
-	assert.GreaterOrEqual(t, metric.DoubleSum().DataPoints().Len(), 2)
+
+	minExpectedPoints := 1
+	if expectDirectionLabels {
+		minExpectedPoints = 2
+	}
+	assert.GreaterOrEqual(t, metric.DoubleSum().DataPoints().Len(), minExpectedPoints)
+
 	internal.AssertDoubleSumMetricLabelExists(t, metric, 0, deviceLabelName)
-	internal.AssertDoubleSumMetricLabelHasValue(t, metric, 0, directionLabelName, readDirectionLabelValue)
-	internal.AssertDoubleSumMetricLabelHasValue(t, metric, metric.DoubleSum().DataPoints().Len()-1, directionLabelName, writeDirectionLabelValue)
+	if expectDirectionLabels {
+		internal.AssertDoubleSumMetricLabelHasValue(t, metric, 0, directionLabelName, readDirectionLabelValue)
+		internal.AssertDoubleSumMetricLabelHasValue(t, metric, metric.DoubleSum().DataPoints().Len()-1, directionLabelName, writeDirectionLabelValue)
+	}
 }
 
 func assertDiskPendingOperationsMetricValid(t *testing.T, metric pdata.Metric) {

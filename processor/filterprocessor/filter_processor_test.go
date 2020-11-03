@@ -16,20 +16,23 @@ package filterprocessor
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
 	metricspb "github.com/census-instrumentation/opencensus-proto/gen-go/metrics/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/config/configmodels"
 	"go.opentelemetry.io/collector/consumer/consumerdata"
+	"go.opentelemetry.io/collector/consumer/pdata"
 	etest "go.opentelemetry.io/collector/exporter/exportertest"
+	"go.opentelemetry.io/collector/internal/goldendataset"
 	"go.opentelemetry.io/collector/internal/processor/filtermetric"
-	"go.opentelemetry.io/collector/internal/processor/filterset"
 	"go.opentelemetry.io/collector/translator/internaldata"
 )
 
@@ -72,9 +75,7 @@ var (
 	}
 
 	regexpMetricsFilterProperties = &filtermetric.MatchProperties{
-		Config: filterset.Config{
-			MatchType: filterset.Regexp,
-		},
+		MatchType:   filtermetric.Regexp,
 		MetricNames: validFilters,
 	}
 
@@ -111,9 +112,7 @@ var (
 			name: "includeAndExclude",
 			inc:  regexpMetricsFilterProperties,
 			exc: &filtermetric.MatchProperties{
-				Config: filterset.Config{
-					MatchType: filterset.Strict,
-				},
+				MatchType: filtermetric.Strict,
 				MetricNames: []string{
 					"prefix_test_match",
 					"test_contains_match",
@@ -138,9 +137,7 @@ var (
 			name: "includeAndExcludeWithEmptyAndNil",
 			inc:  regexpMetricsFilterProperties,
 			exc: &filtermetric.MatchProperties{
-				Config: filterset.Config{
-					MatchType: filterset.Strict,
-				},
+				MatchType: filtermetric.Strict,
 				MetricNames: []string{
 					"prefix_test_match",
 					"test_contains_match",
@@ -166,9 +163,7 @@ var (
 		{
 			name: "emptyFilterInclude",
 			inc: &filtermetric.MatchProperties{
-				Config: filterset.Config{
-					MatchType: filterset.Strict,
-				},
+				MatchType: filtermetric.Strict,
 			},
 			inMN:               [][]*metricspb.Metric{metricsWithName(inMetricNames)},
 			allMetricsFiltered: true,
@@ -176,9 +171,7 @@ var (
 		{
 			name: "emptyFilterExclude",
 			exc: &filtermetric.MatchProperties{
-				Config: filterset.Config{
-					MatchType: filterset.Strict,
-				},
+				MatchType: filtermetric.Strict,
 			},
 			inMN:  [][]*metricspb.Metric{metricsWithName(inMetricNames)},
 			outMN: [][]string{inMetricNames},
@@ -202,12 +195,19 @@ func TestFilterMetricProcessor(t *testing.T) {
 				},
 			}
 			factory := NewFactory()
-			fmp, err := factory.CreateMetricsProcessor(context.Background(), component.ProcessorCreateParams{}, next, cfg)
+			fmp, err := factory.CreateMetricsProcessor(
+				context.Background(),
+				component.ProcessorCreateParams{
+					Logger: zap.NewNop(),
+				},
+				cfg,
+				next,
+			)
 			assert.NotNil(t, fmp)
 			assert.Nil(t, err)
 
 			caps := fmp.GetCapabilities()
-			assert.Equal(t, false, caps.MutatesConsumedData)
+			assert.False(t, caps.MutatesConsumedData)
 			ctx := context.Background()
 			assert.NoError(t, fmp.Start(ctx, nil))
 
@@ -240,77 +240,6 @@ func TestFilterMetricProcessor(t *testing.T) {
 	}
 }
 
-func BenchmarkFilter_MetricNames(b *testing.B) {
-	// runs 1000 metrics through a filterprocessor with both include and exclude filters.
-	stressTest := metricNameTest{
-		name: "includeAndExcludeFilter1000Metrics",
-		inc:  regexpMetricsFilterProperties,
-		exc: &filtermetric.MatchProperties{
-			Config: filterset.Config{
-				MatchType: filterset.Strict,
-			},
-			MetricNames: []string{
-				"prefix_test_match",
-				"test_contains_match",
-			},
-		},
-		outMN: [][]string{{
-			"full_name_match",
-			"prefix/test/match",
-			// "prefix_test_match", excluded by exclude filter
-			"prefixprefix/test/match",
-			"test/match/suffix",
-			"test_match_suffix",
-			"test/match/suffixsuffix",
-			"test/contains/match",
-			// "test_contains_match", excluded by exclude filter
-			"full/name/match",
-			"full_name_match",
-		}},
-	}
-
-	for len(stressTest.inMN[0]) < 1000 {
-		stressTest.inMN[0] = append(stressTest.inMN[0], metricsWithName(inMetricNames)...)
-	}
-
-	benchmarkTests := append(standardTests, stressTest)
-
-	for _, test := range benchmarkTests {
-		// next stores the results of the filter metric processor
-		next := &etest.SinkMetricsExporter{}
-		cfg := &Config{
-			ProcessorSettings: configmodels.ProcessorSettings{
-				TypeVal: typeStr,
-				NameVal: typeStr,
-			},
-			Metrics: MetricFilters{
-				Include: test.inc,
-				Exclude: test.exc,
-			},
-		}
-		factory := NewFactory()
-		fmp, err := factory.CreateMetricsProcessor(context.Background(), component.ProcessorCreateParams{}, next, cfg)
-		assert.NotNil(b, fmp)
-		assert.Nil(b, err)
-
-		md := consumerdata.MetricsData{
-			Metrics: make([]*metricspb.Metric, len(test.inMN)),
-		}
-
-		mds := make([]consumerdata.MetricsData, len(test.inMN))
-		for i, metrics := range test.inMN {
-			mds[i] = consumerdata.MetricsData{
-				Metrics: metrics,
-			}
-		}
-
-		pdm := internaldata.OCToMetrics(md)
-		b.Run(test.name, func(b *testing.B) {
-			assert.NoError(b, fmp.ConsumeMetrics(context.Background(), pdm))
-		})
-	}
-}
-
 func metricsWithName(names []string) []*metricspb.Metric {
 	ret := make([]*metricspb.Metric, len(names))
 	now := time.Now()
@@ -335,4 +264,155 @@ func metricsWithName(names []string) []*metricspb.Metric {
 		}
 	}
 	return ret
+}
+
+func BenchmarkStrictFilter(b *testing.B) {
+	mp := &filtermetric.MatchProperties{
+		MatchType:   "strict",
+		MetricNames: []string{"p10_metric_0"},
+	}
+	benchmarkFilter(b, mp)
+}
+
+func BenchmarkRegexpFilter(b *testing.B) {
+	mp := &filtermetric.MatchProperties{
+		MatchType:   "regexp",
+		MetricNames: []string{"p10_metric_0"},
+	}
+	benchmarkFilter(b, mp)
+}
+
+func BenchmarkExprFilter(b *testing.B) {
+	mp := &filtermetric.MatchProperties{
+		MatchType:   "expr",
+		Expressions: []string{`MetricName == "p10_metric_0"`},
+	}
+	benchmarkFilter(b, mp)
+}
+
+func benchmarkFilter(b *testing.B, mp *filtermetric.MatchProperties) {
+	factory := NewFactory()
+	cfg := factory.CreateDefaultConfig()
+	pcfg := cfg.(*Config)
+	pcfg.Metrics = MetricFilters{
+		Exclude: mp,
+	}
+	next := &etest.SinkMetricsExporter{}
+	ctx := context.Background()
+	proc, _ := factory.CreateMetricsProcessor(
+		ctx,
+		component.ProcessorCreateParams{},
+		cfg,
+		next,
+	)
+	pdms := metricSlice(128)
+	for i := 0; i < b.N; i++ {
+		for _, pdm := range pdms {
+			_ = proc.ConsumeMetrics(ctx, pdm)
+		}
+	}
+}
+
+func metricSlice(numMetrics int) []pdata.Metrics {
+	var out []pdata.Metrics
+	for i := 0; i < numMetrics; i++ {
+		const size = 2
+		out = append(out, pdm(fmt.Sprintf("p%d_", i), size))
+	}
+	return out
+}
+
+func pdm(prefix string, size int) pdata.Metrics {
+	c := goldendataset.MetricCfg{
+		MetricDescriptorType: pdata.MetricDataTypeIntGauge,
+		MetricNamePrefix:     prefix,
+		NumILMPerResource:    size,
+		NumMetricsPerILM:     size,
+		NumPtLabels:          size,
+		NumPtsPerMetric:      size,
+		NumResourceAttrs:     size,
+		NumResourceMetrics:   size,
+	}
+	return goldendataset.MetricDataFromCfg(c)
+}
+
+func TestMetricIndexSingle(t *testing.T) {
+	metrics := pdm("", 1)
+	idx := newMetricIndex()
+	idx.add(0, 0, 0)
+	extracted := idx.extract(metrics)
+	require.Equal(t, metrics, extracted)
+}
+
+func TestMetricIndexAll(t *testing.T) {
+	metrics := pdm("", 2)
+	idx := newMetricIndex()
+	idx.add(0, 0, 0)
+	idx.add(0, 0, 1)
+	idx.add(0, 1, 0)
+	idx.add(0, 1, 1)
+	idx.add(1, 0, 0)
+	idx.add(1, 0, 1)
+	idx.add(1, 1, 0)
+	idx.add(1, 1, 1)
+	extracted := idx.extract(metrics)
+	require.Equal(t, metrics, extracted)
+}
+
+func TestNilResourceMetrics(t *testing.T) {
+	metrics := pdata.NewMetrics()
+	rms := metrics.ResourceMetrics()
+	rms.Append(pdata.NewResourceMetrics())
+	requireNotPanics(t, metrics)
+}
+
+func TestNilILM(t *testing.T) {
+	metrics := pdata.NewMetrics()
+	rms := metrics.ResourceMetrics()
+	rm := pdata.NewResourceMetrics()
+	rm.InitEmpty()
+	rms.Append(rm)
+	ilms := rm.InstrumentationLibraryMetrics()
+	ilms.Append(pdata.NewInstrumentationLibraryMetrics())
+	requireNotPanics(t, metrics)
+}
+
+func TestNilMetric(t *testing.T) {
+	metrics := pdata.NewMetrics()
+	rms := metrics.ResourceMetrics()
+	rm := pdata.NewResourceMetrics()
+	rm.InitEmpty()
+	rms.Append(rm)
+	ilms := rm.InstrumentationLibraryMetrics()
+	ilm := pdata.NewInstrumentationLibraryMetrics()
+	ilms.Append(ilm)
+	ilm.InitEmpty()
+	ms := ilm.Metrics()
+	ms.Append(pdata.NewMetric())
+	requireNotPanics(t, metrics)
+}
+
+func requireNotPanics(t *testing.T, metrics pdata.Metrics) {
+	factory := NewFactory()
+	cfg := factory.CreateDefaultConfig()
+	pcfg := cfg.(*Config)
+	pcfg.Metrics = MetricFilters{
+		Exclude: &filtermetric.MatchProperties{
+			MatchType:   "strict",
+			MetricNames: []string{"foo"},
+		},
+	}
+	next := &etest.SinkMetricsExporter{}
+	ctx := context.Background()
+	proc, _ := factory.CreateMetricsProcessor(
+		ctx,
+		component.ProcessorCreateParams{
+			Logger: zap.NewNop(),
+		},
+		cfg,
+		next,
+	)
+	require.NotPanics(t, func() {
+		_ = proc.ConsumeMetrics(ctx, metrics)
+	})
 }

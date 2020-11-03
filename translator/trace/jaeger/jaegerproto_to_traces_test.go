@@ -262,6 +262,67 @@ func TestProtoBatchToInternalTraces(t *testing.T) {
 	}
 }
 
+func TestProtoBatchToInternalTracesWithTwoLibraries(t *testing.T) {
+	jb := model.Batch{
+		Process: &model.Process{
+			ServiceName: tracetranslator.ResourceNotSet,
+		},
+		Spans: []*model.Span{
+			{
+				StartTime:     testSpanStartTime,
+				Duration:      testSpanEndTime.Sub(testSpanStartTime),
+				OperationName: "operation2",
+				Tags: []model.KeyValue{
+					{
+						Key:   tracetranslator.TagInstrumentationName,
+						VType: model.ValueType_STRING,
+						VStr:  "library2",
+					}, {
+						Key:   tracetranslator.TagInstrumentationVersion,
+						VType: model.ValueType_STRING,
+						VStr:  "0.42.0",
+					},
+				},
+			},
+			{
+				TraceID:       model.NewTraceID(0, 0),
+				StartTime:     testSpanStartTime,
+				Duration:      testSpanEndTime.Sub(testSpanStartTime),
+				OperationName: "operation1",
+				Tags: []model.KeyValue{
+					{
+						Key:   tracetranslator.TagInstrumentationName,
+						VType: model.ValueType_STRING,
+						VStr:  "library1",
+					}, {
+						Key:   tracetranslator.TagInstrumentationVersion,
+						VType: model.ValueType_STRING,
+						VStr:  "0.42.0",
+					},
+				},
+			},
+		},
+	}
+	expected := generateTraceDataTwoSpansFromTwoLibraries()
+	library1Span := expected.ResourceSpans().At(0).InstrumentationLibrarySpans().At(0)
+	library2Span := expected.ResourceSpans().At(0).InstrumentationLibrarySpans().At(1)
+
+	actual := ProtoBatchToInternalTraces(jb)
+
+	assert.Equal(t, actual.ResourceSpans().Len(), 1)
+	assert.Equal(t, actual.ResourceSpans().At(0).InstrumentationLibrarySpans().Len(), 2)
+
+	ils0 := actual.ResourceSpans().At(0).InstrumentationLibrarySpans().At(0)
+	ils1 := actual.ResourceSpans().At(0).InstrumentationLibrarySpans().At(1)
+	if ils0.InstrumentationLibrary().Name() == "library1" {
+		assert.EqualValues(t, library1Span, ils0)
+		assert.EqualValues(t, library2Span, ils1)
+	} else {
+		assert.EqualValues(t, library1Span, ils1)
+		assert.EqualValues(t, library2Span, ils0)
+	}
+}
+
 func TestSetInternalSpanStatus(t *testing.T) {
 
 	nilStatus := pdata.NewSpanStatus()
@@ -480,9 +541,9 @@ func generateProtoProcess() *model.Process {
 func generateTraceDataOneSpanNoResource() pdata.Traces {
 	td := testdata.GenerateTraceDataOneSpanNoResource()
 	span := td.ResourceSpans().At(0).InstrumentationLibrarySpans().At(0).Spans().At(0)
-	span.SetSpanID(pdata.NewSpanID([]byte{0xAF, 0xAE, 0xAD, 0xAC, 0xAB, 0xAA, 0xA9, 0xA8}))
+	span.SetSpanID(pdata.NewSpanID([8]byte{0xAF, 0xAE, 0xAD, 0xAC, 0xAB, 0xAA, 0xA9, 0xA8}))
 	span.SetTraceID(pdata.NewTraceID(
-		[]byte{0xF1, 0xF2, 0xF3, 0xF4, 0xF5, 0xF6, 0xF7, 0xF8, 0xF9, 0xFA, 0xFB, 0xFC, 0xFD, 0xFE, 0xFF, 0x80}))
+		[16]byte{0xF1, 0xF2, 0xF3, 0xF4, 0xF5, 0xF6, 0xF7, 0xF8, 0xF9, 0xFA, 0xFB, 0xFC, 0xFD, 0xFE, 0xFF, 0x80}))
 	span.SetDroppedAttributesCount(0)
 	span.SetDroppedEventsCount(0)
 	span.SetStartTime(testSpanStartTimestamp)
@@ -495,6 +556,17 @@ func generateTraceDataOneSpanNoResource() pdata.Traces {
 	span.Events().At(1).SetDroppedAttributesCount(0)
 	span.Events().At(1).SetName("")
 	span.Events().At(1).Attributes().InsertInt("attr-int", 123)
+	return td
+}
+
+func generateTraceDataWithLibraryInfo() pdata.Traces {
+	td := generateTraceDataOneSpanNoResource()
+	rs0 := td.ResourceSpans().At(0)
+	rs0ils0 := rs0.InstrumentationLibrarySpans().At(0)
+
+	rs0ils0.InstrumentationLibrary().InitEmpty()
+	rs0ils0.InstrumentationLibrary().SetName("io.opentelemetry.test")
+	rs0ils0.InstrumentationLibrary().SetVersion("0.42.0")
 	return td
 }
 
@@ -567,6 +639,22 @@ func generateProtoSpan() *model.Span {
 	}
 }
 
+func generateProtoSpanWithLibraryInfo(libraryName string) *model.Span {
+	span := generateProtoSpan()
+	span.Tags = append([]model.KeyValue{
+		{
+			Key:   tracetranslator.TagInstrumentationName,
+			VType: model.ValueType_STRING,
+			VStr:  libraryName,
+		}, {
+			Key:   tracetranslator.TagInstrumentationVersion,
+			VType: model.ValueType_STRING,
+			VStr:  "0.42.0",
+		},
+	}, span.Tags...)
+
+	return span
+}
 func generateProtoSpanWithTraceState() *model.Span {
 	return &model.Span{
 		TraceID: model.NewTraceID(
@@ -641,7 +729,7 @@ func generateTraceDataTwoSpansChildParent() pdata.Traces {
 
 	span := spans.At(1)
 	span.SetName("operationB")
-	span.SetSpanID([]byte{0x1F, 0x1E, 0x1D, 0x1C, 0x1B, 0x1A, 0x19, 0x18})
+	span.SetSpanID(pdata.NewSpanID([8]byte{0x1F, 0x1E, 0x1D, 0x1C, 0x1B, 0x1A, 0x19, 0x18}))
 	span.SetParentSpanID(spans.At(0).SpanID())
 	span.SetKind(pdata.SpanKindSERVER)
 	span.SetTraceID(spans.At(0).TraceID())
@@ -696,7 +784,7 @@ func generateTraceDataTwoSpansWithFollower() pdata.Traces {
 
 	span := spans.At(1)
 	span.SetName("operationC")
-	span.SetSpanID([]byte{0x1F, 0x1E, 0x1D, 0x1C, 0x1B, 0x1A, 0x19, 0x18})
+	span.SetSpanID(pdata.NewSpanID([8]byte{0x1F, 0x1E, 0x1D, 0x1C, 0x1B, 0x1A, 0x19, 0x18}))
 	span.SetTraceID(spans.At(0).TraceID())
 	span.SetStartTime(spans.At(0).EndTime())
 	span.SetEndTime(spans.At(0).EndTime() + 1000000)
@@ -761,4 +849,37 @@ func BenchmarkProtoBatchToInternalTraces(b *testing.B) {
 	for n := 0; n < b.N; n++ {
 		ProtoBatchToInternalTraces(jb)
 	}
+}
+
+func generateTraceDataTwoSpansFromTwoLibraries() pdata.Traces {
+	td := testdata.GenerateTraceDataOneEmptyResourceSpans()
+
+	rs0 := td.ResourceSpans().At(0)
+	rs0.InstrumentationLibrarySpans().Resize(2)
+
+	rs0ils0 := rs0.InstrumentationLibrarySpans().At(0)
+	rs0ils0.InstrumentationLibrary().InitEmpty()
+	rs0ils0.InstrumentationLibrary().SetName("library1")
+	rs0ils0.InstrumentationLibrary().SetVersion("0.42.0")
+	rs0ils0.Spans().Resize(1)
+	span1 := rs0ils0.Spans().At(0)
+	span1.SetTraceID(pdata.NewTraceID(tracetranslator.UInt64ToByteTraceID(0, 0)))
+	span1.SetSpanID(pdata.NewSpanID(tracetranslator.UInt64ToByteSpanID(0)))
+	span1.SetName("operation1")
+	span1.SetStartTime(testSpanStartTimestamp)
+	span1.SetEndTime(testSpanEndTimestamp)
+
+	rs0ils1 := rs0.InstrumentationLibrarySpans().At(1)
+	rs0ils1.InstrumentationLibrary().InitEmpty()
+	rs0ils1.InstrumentationLibrary().SetName("library2")
+	rs0ils1.InstrumentationLibrary().SetVersion("0.42.0")
+	rs0ils1.Spans().Resize(1)
+	span2 := rs0ils1.Spans().At(0)
+	span2.SetTraceID(span1.TraceID())
+	span2.SetSpanID(span1.SpanID())
+	span2.SetName("operation2")
+	span2.SetStartTime(testSpanStartTimestamp)
+	span2.SetEndTime(testSpanEndTimestamp)
+
+	return td
 }

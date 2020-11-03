@@ -25,50 +25,43 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"go.opentelemetry.io/collector/consumer/pdata"
+	"go.opentelemetry.io/collector/consumer/consumererror"
 )
 
-func TestScrapeMetrics_Errors(t *testing.T) {
+func TestScrape_Errors(t *testing.T) {
 	type testCase struct {
 		name              string
-		bootTimeFunc      func() (uint64, error)
 		virtualMemoryFunc func() (*mem.VirtualMemoryStat, error)
 		swapMemoryFunc    func() (*mem.SwapMemoryStat, error)
-		expectedStartTime pdata.TimestampUnixNano
-		initializationErr string
 		expectedError     string
+		expectedErrCount  int
 	}
 
 	testCases := []testCase{
 		{
-			name:              "bootTimeError",
-			bootTimeFunc:      func() (uint64, error) { return 0, errors.New("err1") },
-			initializationErr: "err1",
-		},
-		{
 			name:              "virtualMemoryError",
 			virtualMemoryFunc: func() (*mem.VirtualMemoryStat, error) { return nil, errors.New("err1") },
 			expectedError:     "err1",
+			expectedErrCount:  swapUsageMetricsLen,
 		},
 		{
-			name:           "swapMemoryError",
-			swapMemoryFunc: func() (*mem.SwapMemoryStat, error) { return nil, errors.New("err2") },
-			expectedError:  "err2",
+			name:             "swapMemoryError",
+			swapMemoryFunc:   func() (*mem.SwapMemoryStat, error) { return nil, errors.New("err2") },
+			expectedError:    "err2",
+			expectedErrCount: pagingMetricsLen,
 		},
 		{
 			name:              "multipleErrors",
 			virtualMemoryFunc: func() (*mem.VirtualMemoryStat, error) { return nil, errors.New("err1") },
 			swapMemoryFunc:    func() (*mem.SwapMemoryStat, error) { return nil, errors.New("err2") },
 			expectedError:     "[err1; err2]",
+			expectedErrCount:  swapUsageMetricsLen + pagingMetricsLen,
 		},
 	}
 
 	for _, test := range testCases {
 		t.Run(test.name, func(t *testing.T) {
 			scraper := newSwapScraper(context.Background(), &Config{})
-			if test.bootTimeFunc != nil {
-				scraper.bootTime = test.bootTimeFunc
-			}
 			if test.virtualMemoryFunc != nil {
 				scraper.virtualMemory = test.virtualMemoryFunc
 			}
@@ -77,23 +70,16 @@ func TestScrapeMetrics_Errors(t *testing.T) {
 			}
 
 			err := scraper.Initialize(context.Background())
-			if test.initializationErr != "" {
-				assert.EqualError(t, err, test.initializationErr)
-				return
-			}
 			require.NoError(t, err, "Failed to initialize swap scraper: %v", err)
-			defer func() { assert.NoError(t, scraper.Close(context.Background())) }()
 
-			metrics, err := scraper.ScrapeMetrics(context.Background())
-			if test.expectedError != "" {
-				assert.EqualError(t, err, test.expectedError)
-				return
+			_, err = scraper.Scrape(context.Background())
+			assert.EqualError(t, err, test.expectedError)
+
+			isPartial := consumererror.IsPartialScrapeError(err)
+			assert.True(t, isPartial)
+			if isPartial {
+				assert.Equal(t, test.expectedErrCount, err.(consumererror.PartialScrapeError).Failed)
 			}
-
-			assert.Equal(t, 3, metrics.Len())
-			assertSwapUsageMetricValid(t, metrics.At(0))
-			assertPagingMetricValid(t, metrics.At(1), test.expectedStartTime)
-			assertPageFaultsMetricValid(t, metrics.At(2), test.expectedStartTime)
 		})
 	}
 }

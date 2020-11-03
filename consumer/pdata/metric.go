@@ -15,8 +15,7 @@
 package pdata
 
 import (
-	"github.com/gogo/protobuf/proto"
-
+	otlpcollectormetrics "go.opentelemetry.io/collector/internal/data/opentelemetry-proto-gen/collector/metrics/v1"
 	otlpmetrics "go.opentelemetry.io/collector/internal/data/opentelemetry-proto-gen/metrics/v1"
 )
 
@@ -41,6 +40,12 @@ type Metrics struct {
 	orig *[]*otlpmetrics.ResourceMetrics
 }
 
+// NewMetricData creates a new MetricData.
+func NewMetrics() Metrics {
+	orig := []*otlpmetrics.ResourceMetrics(nil)
+	return Metrics{&orig}
+}
+
 // MetricDataFromOtlp creates the internal MetricData representation from the OTLP.
 func MetricsFromOtlp(orig []*otlpmetrics.ResourceMetrics) Metrics {
 	return Metrics{&orig}
@@ -51,21 +56,34 @@ func MetricsToOtlp(md Metrics) []*otlpmetrics.ResourceMetrics {
 	return *md.orig
 }
 
-// NewMetricData creates a new MetricData.
-func NewMetrics() Metrics {
-	orig := []*otlpmetrics.ResourceMetrics(nil)
-	return Metrics{&orig}
+// ToOtlpProtoBytes returns the internal MetricData to the OTLP Collector
+// ExportMetricsServiceRequest ProtoBuf bytes. This is intended to export
+// OTLP Protobuf bytes for OTLP/HTTP transports.
+func (md Metrics) ToOtlpProtoBytes() ([]byte, error) {
+	metrics := otlpcollectormetrics.ExportMetricsServiceRequest{
+		ResourceMetrics: *md.orig,
+	}
+	return metrics.Marshal()
+}
+
+// FromOtlpProtoBytes converts OTLP Collector ExportMetricsServiceRequest
+// ProtoBuf bytes to the internal Metrics. Overrides current data.
+// Calling this function on zero-initialized structure causes panic.
+// Use it with NewMetrics or on existing initialized Metrics.
+func (md Metrics) FromOtlpProtoBytes(data []byte) error {
+	metrics := otlpcollectormetrics.ExportMetricsServiceRequest{}
+	if err := metrics.Unmarshal(data); err != nil {
+		return err
+	}
+	*md.orig = metrics.ResourceMetrics
+	return nil
 }
 
 // Clone returns a copy of MetricData.
 func (md Metrics) Clone() Metrics {
-	otlp := MetricsToOtlp(md)
-	resourceMetricsClones := make([]*otlpmetrics.ResourceMetrics, 0, len(otlp))
-	for _, resourceMetrics := range otlp {
-		resourceMetricsClones = append(resourceMetricsClones,
-			proto.Clone(resourceMetrics).(*otlpmetrics.ResourceMetrics))
-	}
-	return MetricsFromOtlp(resourceMetricsClones)
+	rms := NewResourceMetricsSlice()
+	md.ResourceMetrics().CopyTo(rms)
+	return Metrics(rms)
 }
 
 func (md Metrics) ResourceMetrics() ResourceMetricsSlice {
@@ -288,9 +306,4 @@ func copyData(src, dest *otlpmetrics.Metric) {
 		newDoubleHistogram(&srcData.DoubleHistogram).CopyTo(newDoubleHistogram(&data.DoubleHistogram))
 		dest.Data = data
 	}
-}
-
-// DeprecatedNewMetricsResourceSlice temporary public function.
-func DeprecatedNewMetricsResourceSlice(orig *[]*otlpmetrics.ResourceMetrics) ResourceMetricsSlice {
-	return newResourceMetricsSlice(orig)
 }

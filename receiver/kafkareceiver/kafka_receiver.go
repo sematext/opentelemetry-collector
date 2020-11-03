@@ -26,6 +26,7 @@ import (
 
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/consumer"
+	"go.opentelemetry.io/collector/exporter/kafkaexporter"
 	"go.opentelemetry.io/collector/obsreport"
 )
 
@@ -39,7 +40,7 @@ var errUnrecognizedEncoding = fmt.Errorf("unrecognized encoding")
 type kafkaConsumer struct {
 	name              string
 	consumerGroup     sarama.ConsumerGroup
-	nextConsumer      consumer.TraceConsumer
+	nextConsumer      consumer.TracesConsumer
 	topics            []string
 	cancelConsumeLoop context.CancelFunc
 	unmarshaller      Unmarshaller
@@ -49,7 +50,7 @@ type kafkaConsumer struct {
 
 var _ component.Receiver = (*kafkaConsumer)(nil)
 
-func newReceiver(config Config, params component.ReceiverCreateParams, unmarshalers map[string]Unmarshaller, nextConsumer consumer.TraceConsumer) (*kafkaConsumer, error) {
+func newReceiver(config Config, params component.ReceiverCreateParams, unmarshalers map[string]Unmarshaller, nextConsumer consumer.TracesConsumer) (*kafkaConsumer, error) {
 	unmarshaller := unmarshalers[config.Encoding]
 	if unmarshaller == nil {
 		return nil, errUnrecognizedEncoding
@@ -66,6 +67,9 @@ func newReceiver(config Config, params component.ReceiverCreateParams, unmarshal
 			return nil, err
 		}
 		c.Version = version
+	}
+	if err := kafkaexporter.ConfigureAuthentication(config.Authentication, c); err != nil {
+		return nil, err
 	}
 	client, err := sarama.NewConsumerGroup(config.Brokers, config.GroupID, c)
 	if err != nil {
@@ -120,7 +124,7 @@ func (c *kafkaConsumer) Shutdown(context.Context) error {
 type consumerGroupHandler struct {
 	name         string
 	unmarshaller Unmarshaller
-	nextConsumer consumer.TraceConsumer
+	nextConsumer consumer.TracesConsumer
 	ready        chan bool
 	readyCloser  sync.Once
 

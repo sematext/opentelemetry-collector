@@ -99,15 +99,15 @@ func jThriftSpansToInternal(spans []*jaeger.Span, dest pdata.SpanSlice) {
 }
 
 func jThriftSpanToInternal(span *jaeger.Span, dest pdata.Span) {
-	dest.SetTraceID(tracetranslator.Int64ToByteTraceID(span.TraceIdHigh, span.TraceIdLow))
-	dest.SetSpanID(tracetranslator.Int64ToByteSpanID(span.SpanId))
+	dest.SetTraceID(tracetranslator.Int64ToTraceID(span.TraceIdHigh, span.TraceIdLow))
+	dest.SetSpanID(tracetranslator.Int64ToSpanID(span.SpanId))
 	dest.SetName(span.OperationName)
 	dest.SetStartTime(microsecondsToUnixNano(span.StartTime))
 	dest.SetEndTime(microsecondsToUnixNano(span.StartTime + span.Duration))
 
 	parentSpanID := span.ParentSpanId
 	if parentSpanID != 0 {
-		dest.SetParentSpanID(tracetranslator.Int64ToByteSpanID(parentSpanID))
+		dest.SetParentSpanID(tracetranslator.Int64ToSpanID(parentSpanID))
 	}
 
 	attrs := dest.Attributes()
@@ -186,7 +186,7 @@ func jThriftReferencesToSpanLinks(refs []*jaeger.SpanRef, excludeParentID int64,
 			continue
 		}
 
-		link.SetTraceID(pdata.NewTraceID(tracetranslator.Int64ToByteTraceID(ref.TraceIdHigh, ref.TraceIdLow)))
+		link.SetTraceID(tracetranslator.Int64ToTraceID(ref.TraceIdHigh, ref.TraceIdLow))
 		link.SetSpanID(pdata.NewSpanID(tracetranslator.Int64ToByteSpanID(ref.SpanId)))
 		i++
 	}

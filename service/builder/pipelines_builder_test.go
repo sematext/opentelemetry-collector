@@ -173,7 +173,7 @@ func TestPipelinesBuilder_BuildVarious(t *testing.T) {
 			// First check that there are no logs in the exporters yet.
 			var exporterConsumers []*componenttest.ExampleExporterConsumer
 			for _, exporter := range exporters {
-				consumer := exporter.le.(*componenttest.ExampleExporterConsumer)
+				consumer := exporter.getLogExporter().(*componenttest.ExampleExporterConsumer)
 				exporterConsumers = append(exporterConsumers, consumer)
 				require.Equal(t, len(consumer.Logs), 0)
 			}
@@ -235,13 +235,13 @@ func testPipeline(t *testing.T, pipelineName string, exporterNames []string) {
 	// First check that there are no traces in the exporters yet.
 	var exporterConsumers []*componenttest.ExampleExporterConsumer
 	for _, exporter := range exporters {
-		consumer := exporter.te.(*componenttest.ExampleExporterConsumer)
+		consumer := exporter.getTraceExporter().(*componenttest.ExampleExporterConsumer)
 		exporterConsumers = append(exporterConsumers, consumer)
 		require.Equal(t, len(consumer.Traces), 0)
 	}
 
 	td := testdata.GenerateTraceDataOneSpan()
-	processor.firstTC.(consumer.TraceConsumer).ConsumeTraces(context.Background(), td)
+	processor.firstTC.(consumer.TracesConsumer).ConsumeTraces(context.Background(), td)
 
 	// Now verify received data.
 	for _, consumer := range exporterConsumers {
@@ -301,6 +301,9 @@ func TestProcessorsBuilder_ErrorOnUnsupportedProcessor(t *testing.T) {
 
 func newBadProcessorFactory() component.ProcessorFactory {
 	return processorhelper.NewFactory("bf", func() configmodels.Processor {
-		return &configmodels.ProcessorSettings{}
+		return &configmodels.ProcessorSettings{
+			TypeVal: "bf",
+			NameVal: "bf",
+		}
 	})
 }

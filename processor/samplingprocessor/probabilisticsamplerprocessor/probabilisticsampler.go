@@ -49,14 +49,14 @@ const (
 )
 
 type tracesamplerprocessor struct {
-	nextConsumer       consumer.TraceConsumer
+	nextConsumer       consumer.TracesConsumer
 	scaledSamplingRate uint32
 	hashSeed           uint32
 }
 
-// newTraceProcessor returns a processor.TraceProcessor that will perform head sampling according to the given
+// newTraceProcessor returns a processor.TracesProcessor that will perform head sampling according to the given
 // configuration.
-func newTraceProcessor(nextConsumer consumer.TraceConsumer, cfg Config) (component.TraceProcessor, error) {
+func newTraceProcessor(nextConsumer consumer.TracesConsumer, cfg Config) (component.TracesProcessor, error) {
 	if nextConsumer == nil {
 		return nil, componenterror.ErrNilNextConsumer
 	}
@@ -111,11 +111,12 @@ func (tsp *tracesamplerprocessor) processTraces(ctx context.Context, resourceSpa
 			// If one assumes random trace ids hashing may seems avoidable, however, traces can be coming from sources
 			// with various different criteria to generate trace id and perhaps were already sampled without hashing.
 			// Hashing here prevents bias due to such systems.
+			tidBytes := span.TraceID().Bytes()
 			sampled := sp == mustSampleSpan ||
-				hash(span.TraceID(), tsp.hashSeed)&bitMaskHashBuckets < scaledSamplingRate
+				hash(tidBytes[:], tsp.hashSeed)&bitMaskHashBuckets < scaledSamplingRate
 
 			if sampled {
-				spns.Append(&span)
+				spns.Append(span)
 			}
 		}
 	}
@@ -189,7 +190,7 @@ func parseSpanSamplingPriority(span pdata.Span) samplingPriority {
 	return decision
 }
 
-// hash is a murmur3 hash function, see http://en.wikipedia.org/wiki/MurmurHash.
+// hash is a murmur3 hash function, see http://en.wikipedia.org/wiki/MurmurHash
 func hash(key []byte, seed uint32) (hash uint32) {
 	const (
 		c1 = 0xcc9e2d51

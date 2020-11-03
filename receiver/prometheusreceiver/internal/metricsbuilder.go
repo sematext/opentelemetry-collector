@@ -30,16 +30,11 @@ import (
 )
 
 const (
-	metricsSuffixCount      = "_count"
-	metricsSuffixBucket     = "_bucket"
-	metricsSuffixSum        = "_sum"
-	startTimeMetricName     = "process_start_time_seconds"
-	scrapeLatencyMetricName = "scrape_duration_seconds"
-	scrapeStatusMetricName  = "up"
-	scrapeStatusOk          = "200"
-	// The 'up' metric only reports whether or not the scrape succeeded - in the case that
-	// it fails, we set the status to '404', which is the most generic failure status.
-	scrapeStatusErr = "404"
+	metricsSuffixCount  = "_count"
+	metricsSuffixBucket = "_bucket"
+	metricsSuffixSum    = "_sum"
+	startTimeMetricName = "process_start_time_seconds"
+	scrapeUpMetricName  = "up"
 )
 
 var (
@@ -61,8 +56,6 @@ type metricBuilder struct {
 	useStartTimeMetric   bool
 	startTimeMetricRegex *regexp.Regexp
 	startTime            float64
-	scrapeLatencyMs      float64
-	scrapeStatus         string
 	logger               *zap.Logger
 	currentMf            MetricFamily
 }
@@ -106,16 +99,19 @@ func (b *metricBuilder) AddDataPoint(ls labels.Labels, t int64, v float64) error
 		b.hasInternalMetric = true
 		lm := ls.Map()
 		delete(lm, model.MetricNameLabel)
-		switch metricName {
-		case scrapeStatusMetricName:
-			if v == 1.0 {
-				b.scrapeStatus = scrapeStatusOk
+		// See https://www.prometheus.io/docs/concepts/jobs_instances/#automatically-generated-labels-and-time-series
+		// up: 1 if the instance is healthy, i.e. reachable, or 0 if the scrape failed.
+		if metricName == scrapeUpMetricName && v != 1.0 {
+			if v == 0.0 {
+				b.logger.Warn("Failed to scrape Prometheus endpoint",
+					zap.Int64("scrape_timestamp", t),
+					zap.String("target_labels", fmt.Sprintf("%v", lm)))
 			} else {
-				b.scrapeStatus = scrapeStatusErr
-				b.logger.Warn("http client error", zap.Int64("timestamp", t), zap.Float64("value", v), zap.String("labels", fmt.Sprintf("%v", lm)))
+				b.logger.Warn("The 'up' metric contains invalid value",
+					zap.Float64("value", v),
+					zap.Int64("scrape_timestamp", t),
+					zap.String("target_labels", fmt.Sprintf("%v", lm)))
 			}
-		case scrapeLatencyMetricName:
-			b.scrapeLatencyMs = v * 1000
 		}
 		return nil
 	case b.useStartTimeMetric && b.matchStartTimeMetric(metricName):
@@ -237,7 +233,7 @@ func convToOCAMetricType(metricType textparse.MetricType) metricspb.MetricDescri
 		return metricspb.MetricDescriptor_CUMULATIVE_DISTRIBUTION
 	// dropping support for gaugehistogram for now until we have an official spec of its implementation
 	// a draft can be found in: https://docs.google.com/document/d/1KwV0mAXwwbvvifBvDKH_LU1YjyXE_wxCkHNoCGq1GX0/edit#heading=h.1cvzqd4ksd23
-	//case textparse.MetricTypeGaugeHistogram:
+	// case textparse.MetricTypeGaugeHistogram:
 	//	return metricspb.MetricDescriptor_GAUGE_DISTRIBUTION
 	case textparse.MetricTypeSummary:
 		return metricspb.MetricDescriptor_SUMMARY
@@ -302,7 +298,7 @@ func timestampFromMs(timeAtMs int64) *timestamppb.Timestamp {
 }
 
 func isInternalMetric(metricName string) bool {
-	if metricName == "up" || strings.HasPrefix(metricName, "scrape_") {
+	if metricName == scrapeUpMetricName || strings.HasPrefix(metricName, "scrape_") {
 		return true
 	}
 	return false
